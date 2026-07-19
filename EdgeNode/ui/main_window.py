@@ -1,11 +1,13 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QLabel,
     QHBoxLayout,
     QMainWindow,
     QVBoxLayout,
     QWidget,
 )
+
+from .base_panel import BasePanel
+from .status_bar import StatusBar
 
 
 class MainWindow(QMainWindow):
@@ -18,6 +20,8 @@ class MainWindow(QMainWindow):
         self._build_ui()
 
     def _configure_window(self) -> None:
+        """Configure the main window."""
+
         self.setWindowTitle(
             "TeaVision Edge - Industrial Tea Fermentation Analysis System"
         )
@@ -26,6 +30,8 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1200, 700)
 
     def _build_ui(self) -> None:
+        """Build the user interface."""
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
@@ -33,66 +39,33 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(10)
 
-        title = QLabel("TeaVision Edge")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(
-            """
-            font-size:28px;
-            font-weight:bold;
-            padding:10px;
-            """
-        )
-
-        main_layout.addWidget(title)
-
+        # -----------------------------
+        # Main Content
+        # -----------------------------
         content_layout = QHBoxLayout()
         content_layout.setSpacing(10)
 
-        left = self._create_panel("Camera Settings")
-        center = self._create_panel("Inspection Area")
-        right = self._create_panel("Analysis Result")
+        self.left_panel = BasePanel("Camera Settings")
+        self.center_panel = BasePanel("Inspection Area")
+        self.right_panel = BasePanel("Analysis Result")
 
-        content_layout.addWidget(left, 1)
-        content_layout.addWidget(center, 3)
-        content_layout.addWidget(right, 1)
+        content_layout.addWidget(self.left_panel, 1)
+        content_layout.addWidget(self.center_panel, 3)
+        content_layout.addWidget(self.right_panel, 1)
 
         main_layout.addLayout(content_layout)
 
-        history = self._create_panel("History Table")
-        history.setFixedHeight(180)
+        # -----------------------------
+        # History Panel
+        # -----------------------------
+        self.history_panel = BasePanel("History Table")
+        self.history_panel.setFixedHeight(180)
 
-        main_layout.addWidget(history)
+        main_layout.addWidget(self.history_panel)
 
-        self.statusBar().showMessage("Ready")
+        # -----------------------------
+        # Status Bar
+        # -----------------------------
+        self.app_status_bar = StatusBar()
+        self.setStatusBar(self.app_status_bar)
 
-    def _create_panel(self, title: str) -> QWidget:
-        panel = QWidget()
-
-        panel.setStyleSheet(
-            """
-            QWidget{
-                border:1px solid #666666;
-                border-radius:8px;
-                background:#3A3A3A;
-            }
-            """
-        )
-
-        layout = QVBoxLayout(panel)
-
-        label = QLabel(title)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        label.setStyleSheet(
-            """
-            font-size:16px;
-            font-weight:bold;
-            padding:8px;
-            color:white;
-            """
-        )
-
-        layout.addWidget(label)
-        layout.addStretch()
-
-        return panel
