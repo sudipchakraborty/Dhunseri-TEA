@@ -1,52 +1,98 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
+    QLabel,
     QHBoxLayout,
+    QMainWindow,
+    QVBoxLayout,
+    QWidget,
 )
-
-from app.ui.control_panel import ControlPanel
-from app.ui.image_panel import ImagePanel
-from app.ui.result_panel import ResultPanel
-from app.ui.history_table import HistoryTable
-from app.ui.toolbar import ToolBar
 
 
 class MainWindow(QMainWindow):
+    """Main application window."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
-        self.setWindowTitle("TEA QUALITY ANALYZER")
+        self._configure_window()
+        self._build_ui()
 
-        self.resize(1600,900)
+    def _configure_window(self) -> None:
+        self.setWindowTitle(
+            "TeaVision Edge - Industrial Tea Fermentation Analysis System"
+        )
 
-        central = QWidget()
+        self.resize(1400, 900)
+        self.setMinimumSize(1200, 700)
 
-        self.setCentralWidget(central)
+    def _build_ui(self) -> None:
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
 
-        main_layout = QVBoxLayout(central)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(10)
 
-        top_layout = QHBoxLayout()
+        title = QLabel("TeaVision Edge")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet(
+            """
+            font-size:28px;
+            font-weight:bold;
+            padding:10px;
+            """
+        )
 
-        self.control_panel = ControlPanel()
+        main_layout.addWidget(title)
 
-        self.image_panel = ImagePanel()
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(10)
 
-        self.result_panel = ResultPanel()
+        left = self._create_panel("Camera Settings")
+        center = self._create_panel("Inspection Area")
+        right = self._create_panel("Analysis Result")
 
-        top_layout.addWidget(self.control_panel,1)
+        content_layout.addWidget(left, 1)
+        content_layout.addWidget(center, 3)
+        content_layout.addWidget(right, 1)
 
-        top_layout.addWidget(self.image_panel,3)
+        main_layout.addLayout(content_layout)
 
-        top_layout.addWidget(self.result_panel,1)
+        history = self._create_panel("History Table")
+        history.setFixedHeight(180)
 
-        self.toolbar = ToolBar()
+        main_layout.addWidget(history)
 
-        self.history = HistoryTable()
+        self.statusBar().showMessage("Ready")
 
-        main_layout.addLayout(top_layout)
+    def _create_panel(self, title: str) -> QWidget:
+        panel = QWidget()
 
-        main_layout.addWidget(self.toolbar)
+        panel.setStyleSheet(
+            """
+            QWidget{
+                border:1px solid #666666;
+                border-radius:8px;
+                background:#3A3A3A;
+            }
+            """
+        )
 
-        main_layout.addWidget(self.history)
+        layout = QVBoxLayout(panel)
+
+        label = QLabel(title)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        label.setStyleSheet(
+            """
+            font-size:16px;
+            font-weight:bold;
+            padding:8px;
+            color:white;
+            """
+        )
+
+        layout.addWidget(label)
+        layout.addStretch()
+
+        return panel
