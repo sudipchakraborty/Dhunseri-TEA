@@ -1,0 +1,46 @@
+/* ==========================================================
+   TeaVision Edge Dark Theme
+   ========================================================== */
+
+QMainWindow
+{
+    background-color:#2B2B2B;
+}
+
+QWidget
+{
+    background-color:#2B2B2B;
+    color:white;
+    font-size:11pt;
+    font-family:Segoe UI;
+}
+
+QFrame#BasePanel
+{
+    background-color:#3A3A3A;
+
+    border:1px solid #555555;
+
+    border-radius:8px;
+}
+
+QLabel#PanelTitle
+{
+    color:white;
+
+    font-size:16pt;
+
+    font-weight:bold;
+
+    padding:8px;
+}
+
+QStatusBar
+{
+    background:#3A3A3A;
+}
+
+QStatusBar QLabel
+{
+    color:white;
+}

@@ -30,19 +30,19 @@ class BasePanel(QFrame):
         layout.addWidget(self.title_label)
         layout.addWidget(self.content_widget)
 
-        self.setStyleSheet(
-            """
-            QFrame#BasePanel{
-                background-color:#3A3A3A;
-                border:1px solid #666666;
-                border-radius:8px;
-            }
+        # self.setStyleSheet(
+        #     """
+        #     QFrame#BasePanel{
+        #         background-color:#3A3A3A;
+        #         border:1px solid #666666;
+        #         border-radius:8px;
+        #     }
 
-            QLabel#PanelTitle{
-                color:white;
-                font-size:16px;
-                font-weight:bold;
-                padding:6px;
-            }
-            """
-        )
+        #     QLabel#PanelTitle{
+        #         color:white;
+        #         font-size:16px;
+        #         font-weight:bold;
+        #         padding:6px;
+        #     }
+        #     """
+        # )
