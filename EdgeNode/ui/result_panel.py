@@ -45,12 +45,14 @@ class ResultPanel(BasePanel):
         brown_caption.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         self.brown_display = QLCDNumber()
-        self.brown_display.setDigitCount(5)
+        # Whole percentage only. QLCDNumber right-aligns values within the
+        # available digit positions, keeping the readout near the percent sign.
+        self.brown_display.setDigitCount(3)
         self.brown_display.setSegmentStyle(
             QLCDNumber.SegmentStyle.Flat
         )
         self.brown_display.setFixedHeight(135)
-        self.brown_display.display("00.00")
+        self.brown_display.display("0")
         self.brown_display.setStyleSheet(
             """
             QLCDNumber {
@@ -70,10 +72,10 @@ class ResultPanel(BasePanel):
         percent_label = QLabel("%")
         percent_label.setAlignment(
             Qt.AlignmentFlag.AlignRight
-            | Qt.AlignmentFlag.AlignVCenter
+            | Qt.AlignmentFlag.AlignBottom
         )
-        percent_label.setFixedHeight(38)
-        percent_label.setContentsMargins(0, 0, 8, 0)
+        percent_label.setFixedHeight(44)
+        percent_label.setContentsMargins(0, 8, 8, 0)
         percent_label.setStyleSheet(
             "color: #ff3030; font-size: 25pt; font-weight: bold;"
         )
@@ -163,10 +165,10 @@ class ResultPanel(BasePanel):
     ):
 
         self.lbl_brown.setText(
-            f"{result.brown_percentage:.2f} %"
+            f"{result.brown_percentage:.0f} %"
         )
         self.brown_display.display(
-            f"{result.brown_percentage:05.2f}"
+            f"{result.brown_percentage:.0f}"
         )
 
         self.lbl_status.setText(
@@ -207,8 +209,8 @@ class ResultPanel(BasePanel):
 
     def clear(self):
 
-        self.lbl_brown.setText("0.00 %")
-        self.brown_display.display("00.00")
+        self.lbl_brown.setText("0 %")
+        self.brown_display.display("0")
         self.lbl_status.setText("READY")
         self.lbl_fermentation.setText("Fermentation: Waiting")
         self.lbl_quality.setText("Tea Quality: Waiting")

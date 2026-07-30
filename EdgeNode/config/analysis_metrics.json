@@ -1,7 +1,7 @@
 {
   "fermentation": {
     "under_fermented_max": 40.0,
-    "perfect_max": 70.0
+    "perfect_max": 60.0
   },
   "tea_quality": {
     "poor_max": 30.0,
