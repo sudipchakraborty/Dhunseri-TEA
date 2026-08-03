@@ -1,0 +1,14 @@
+{
+  "smtp_host": "smtp.gmail.com",
+  "smtp_port": 587,
+  "use_tls": true,
+  "use_ssl": false,
+  "sender_email": "sudip.embedded@gmail.com",
+  "sender_name": "TeaVision Edge",
+  "password": "ahsbetqvzqybqsib",
+  "recipients": [
+    "sudip.embedded@gmail.com"
+  ],
+  "subject": "TeaVision Edge notification",
+  "message": "This is an automated notification from TeaVision Edge."
+}

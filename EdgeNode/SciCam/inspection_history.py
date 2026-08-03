@@ -36,10 +36,28 @@ class InspectionHistoryStore:
                     tea_quality TEXT NOT NULL,
                     confidence REAL NOT NULL,
                     processing_ms REAL NOT NULL,
-                    image_path TEXT NOT NULL
+                    image_path TEXT NOT NULL,
+                    average_rgb TEXT NOT NULL DEFAULT '0,0,0',
+                    average_lab TEXT NOT NULL DEFAULT '0,0,0',
+                    brightness REAL NOT NULL DEFAULT 0
                 )
                 """
             )
+            columns = {
+                row[1] for row in connection.execute(
+                    "PRAGMA table_info(inspections)"
+                ).fetchall()
+            }
+            migrations = {
+                "average_rgb": "TEXT NOT NULL DEFAULT '0,0,0'",
+                "average_lab": "TEXT NOT NULL DEFAULT '0,0,0'",
+                "brightness": "REAL NOT NULL DEFAULT 0",
+            }
+            for name, declaration in migrations.items():
+                if name not in columns:
+                    connection.execute(
+                        f"ALTER TABLE inspections ADD COLUMN {name} {declaration}"
+                    )
             connection.commit()
 
     def add(self, record: dict) -> None:
@@ -49,8 +67,9 @@ class InspectionHistoryStore:
                 INSERT INTO inspections (
                     captured_at, sample_id, brown_percentage,
                     fermentation_status, tea_quality, confidence,
-                    processing_ms, image_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    processing_ms, image_path, average_rgb, average_lab,
+                    brightness
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record["captured_at"],
@@ -61,6 +80,9 @@ class InspectionHistoryStore:
                     record["confidence"],
                     record["processing_ms"],
                     record["image_path"],
+                    ",".join(str(value) for value in record["average_rgb"]),
+                    ",".join(str(value) for value in record["average_lab"]),
+                    record["brightness"],
                 ),
             )
             connection.commit()
@@ -72,9 +94,20 @@ class InspectionHistoryStore:
                 """
                 SELECT captured_at, sample_id, brown_percentage,
                        fermentation_status, tea_quality, confidence,
-                       processing_ms, image_path
+                       processing_ms, image_path, average_rgb, average_lab,
+                       brightness
                 FROM inspections
                 ORDER BY captured_at DESC, id DESC
                 """
             ).fetchall()
-        return [dict(row) for row in rows]
+        records = []
+        for row in rows:
+            record = dict(row)
+            record["average_rgb"] = tuple(
+                int(float(value)) for value in record["average_rgb"].split(",")
+            )
+            record["average_lab"] = tuple(
+                float(value) for value in record["average_lab"].split(",")
+            )
+            records.append(record)
+        return records

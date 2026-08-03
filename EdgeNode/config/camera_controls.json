@@ -1,0 +1,14 @@
+{
+  "exposure": 54,
+  "gain": 15,
+  "brightness": 40,
+  "contrast": 43,
+  "saturation": 63,
+  "gamma": 86,
+  "temperature": 83,
+  "tint": 93,
+  "averaging_window": 20,
+  "auto_exposure": false,
+  "auto_white_balance": false,
+  "auto_focus": false
+}

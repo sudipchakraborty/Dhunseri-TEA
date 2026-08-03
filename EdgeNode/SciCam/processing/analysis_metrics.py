@@ -11,6 +11,22 @@ DEFAULT_CONFIG_PATH = (
     / "analysis_metrics.json"
 )
 
+DEFAULT_FERMENTATION = {
+    "under_poor": {"from": 0.0, "to": 81.0},
+    "under_moderate": {"from": 82.0, "to": 84.0},
+    "good": {"from": 85.0, "to": 87.0},
+    "over_moderate": {"from": 88.0, "to": 90.0},
+    "over_poor": {"from": 91.0, "to": 100.0},
+}
+
+FERMENTATION_LABELS = {
+    "under_poor": "Under Fermented (Poor)",
+    "under_moderate": "Under Fermented (Moderate)",
+    "good": "Good Fermentation",
+    "over_moderate": "Over Fermented (Moderate)",
+    "over_poor": "Over Fermented (Poor)",
+}
+
 
 class AnalysisMetrics:
     """Load, validate, save, and apply brown-content classifications."""
@@ -23,6 +39,16 @@ class AnalysisMetrics:
     def load(self) -> None:
         with self.path.open("r", encoding="utf-8") as file:
             data = json.load(file)
+        fermentation = data.get("fermentation", {})
+        uses_shared_boundaries = (
+            "under_poor" in fermentation
+            and fermentation["under_poor"].get("to")
+            == fermentation.get("under_moderate", {}).get("from")
+        )
+        if "under_poor" not in fermentation or uses_shared_boundaries:
+            data = {"fermentation": dict(DEFAULT_FERMENTATION)}
+            self.save(data)
+            return
         self.validate(data)
         self.data = data
 
@@ -37,51 +63,35 @@ class AnalysisMetrics:
     @staticmethod
     def validate(data: dict) -> None:
         fermentation = data["fermentation"]
-        quality = data["tea_quality"]
+        keys = list(FERMENTATION_LABELS)
+        ranges = []
+        for key in keys:
+            range_data = fermentation[key]
+            start = float(range_data["from"])
+            end = float(range_data["to"])
+            if not 0 <= start < end <= 100:
+                raise ValueError(
+                    f"{FERMENTATION_LABELS[key]} must have From below To."
+                )
+            ranges.append((start, end))
 
-        fermentation_limits = [
-            float(fermentation["under_fermented_max"]),
-            float(fermentation["perfect_max"]),
-        ]
-        quality_limits = [
-            float(quality["poor_max"]),
-            float(quality["moderate_max"]),
-            float(quality["good_max"]),
-        ]
-
-        if not (
-            0 <= fermentation_limits[0]
-            < fermentation_limits[1]
-            <= 100
-        ):
+        if ranges[0][0] != 0 or ranges[-1][1] != 100:
             raise ValueError(
-                "Fermentation limits must increase between 0 and 100."
+                "Fermentation ranges must cover from 0 to 100."
             )
-
-        if not (
-            0 <= quality_limits[0]
-            < quality_limits[1]
-            < quality_limits[2]
-            <= 100
-        ):
-            raise ValueError(
-                "Tea-quality limits must increase between 0 and 100."
-            )
+        for previous, current in zip(ranges, ranges[1:]):
+            if previous[1] + 1 != current[0]:
+                raise ValueError(
+                    "Each From value must follow the previous To value."
+                )
 
     def classify_fermentation(self, brown: float) -> str:
-        limits = self.data["fermentation"]
-        if brown <= limits["under_fermented_max"]:
-            return "Under Fermented"
-        if brown <= limits["perfect_max"]:
-            return "Perfect"
-        return "Over Fermented"
-
-    def classify_quality(self, brown: float) -> str:
-        limits = self.data["tea_quality"]
-        if brown <= limits["poor_max"]:
-            return "Poor Quality"
-        if brown <= limits["moderate_max"]:
-            return "Moderate Quality"
-        if brown <= limits["good_max"]:
-            return "Good"
-        return "Premium"
+        value = int(max(0.0, min(100.0, float(brown))) + 0.5)
+        fermentation = self.data["fermentation"]
+        for key in FERMENTATION_LABELS:
+            range_data = fermentation[key]
+            start = float(range_data["from"])
+            end = float(range_data["to"])
+            if start <= value <= end:
+                return FERMENTATION_LABELS[key]
+        raise ValueError("Reading is outside the configured ranges.")

@@ -81,15 +81,10 @@ class ResultPanel(BasePanel):
         )
 
         self.lbl_fermentation = QLabel("Fermentation: Stabilizing")
-        self.lbl_quality = QLabel("Tea Quality: Stabilizing")
-        for decision_label in (
-            self.lbl_fermentation,
-            self.lbl_quality,
-        ):
-            decision_label.setStyleSheet(
-                "color: white; font-size: 15pt; font-weight: bold;"
-            )
-            decision_label.setMinimumHeight(36)
+        self.lbl_fermentation.setStyleSheet(
+            "color: white; font-size: 15pt; font-weight: bold;"
+        )
+        self.lbl_fermentation.setMinimumHeight(36)
 
         display_frame = QFrame()
         display_frame.setObjectName("BrownDisplayFrame")
@@ -119,7 +114,6 @@ class ResultPanel(BasePanel):
         display_layout.addWidget(percent_label)
         display_layout.addSpacing(8)
         display_layout.addWidget(self.lbl_fermentation)
-        display_layout.addWidget(self.lbl_quality)
 
         self.content_layout.addWidget(display_frame)
 
@@ -177,10 +171,6 @@ class ResultPanel(BasePanel):
         self.lbl_fermentation.setText(
             f"Fermentation: {result.fermentation_status}"
         )
-        self.lbl_quality.setText(
-            f"Tea Quality: {result.tea_quality}"
-        )
-
         self.lbl_rgb.setText(
             f"({result.average_rgb[0]}, "
             f"{result.average_rgb[1]}, "
@@ -213,7 +203,6 @@ class ResultPanel(BasePanel):
         self.brown_display.display("0")
         self.lbl_status.setText("READY")
         self.lbl_fermentation.setText("Fermentation: Waiting")
-        self.lbl_quality.setText("Tea Quality: Waiting")
         self.lbl_rgb.setText("(0, 0, 0)")
         self.lbl_lab.setText("(0.0, 0.0, 0.0)")
         self.lbl_brightness.setText("0.0")

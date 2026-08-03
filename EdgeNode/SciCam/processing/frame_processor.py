@@ -10,20 +10,28 @@ from .analyzers.histogram_generator import HistogramGenerator
 from .analyzers.lab_analyzer import LABAnalyzer
 from .analyzers.rgb_analyzer import RGBAnalyzer
 from .brown_detector import BrownDetector
+from .colour_adjustment import ColourAdjustmentProcessor
 from .analysis_metrics import AnalysisMetrics
 from .moving_average import MovingAverage
 from .pipeline import ProcessingPipeline
 from .processing_result import ProcessingResult
 from .sample_roi import CircularSampleROI
-from .white_balance import WhiteBalanceProcessor
 
 
 class FrameProcessor:
     """Run the image-processing and analysis pipeline for one frame."""
 
-    def __init__(self, averaging_window: int = 20) -> None:
+    def __init__(
+        self,
+        averaging_window: int = 20,
+        diagnostics_enabled: bool = False,
+    ) -> None:
         self.pipeline = ProcessingPipeline()
-        self.pipeline.add(WhiteBalanceProcessor())
+        # Do not apply gray-world white balance to the captured frame. Tea
+        # commonly fills most of the ROI with one genuine dominant colour;
+        # forcing the channel averages to gray would remove that colour.
+        self.colour_adjustment = ColourAdjustmentProcessor()
+        self.pipeline.add(self.colour_adjustment)
 
         self.brown_detector = BrownDetector()
         self.rgb_analyzer = RGBAnalyzer()
@@ -33,12 +41,37 @@ class FrameProcessor:
         self.sample_roi = CircularSampleROI()
         self.brown_average = MovingAverage(averaging_window)
         self.analysis_metrics = AnalysisMetrics()
+        self.diagnostics_enabled = diagnostics_enabled
 
     def set_averaging_window(self, window_size: int) -> None:
         self.brown_average.set_window_size(window_size)
 
     def reset_average(self) -> None:
         self.brown_average.reset()
+
+    def set_exposure(self, value: int) -> None:
+        self.colour_adjustment.set_exposure(value)
+
+    def set_gain(self, value: int) -> None:
+        self.colour_adjustment.set_gain(value)
+
+    def set_brightness(self, value: int) -> None:
+        self.colour_adjustment.set_brightness(value)
+
+    def set_contrast(self, value: int) -> None:
+        self.colour_adjustment.set_contrast(value)
+
+    def set_saturation(self, value: int) -> None:
+        self.colour_adjustment.set_saturation(value)
+
+    def set_gamma(self, value: int) -> None:
+        self.colour_adjustment.set_gamma(value)
+
+    def set_temperature(self, value: int) -> None:
+        self.colour_adjustment.set_temperature(value)
+
+    def set_tint(self, value: int) -> None:
+        self.colour_adjustment.set_tint(value)
 
     def process(self, frame: np.ndarray) -> ProcessingResult:
         start = time.perf_counter()
@@ -63,11 +96,14 @@ class FrameProcessor:
             white_balance,
             roi_mask,
         )
-        histogram_image = self.histogram_generator.process(
-            white_balance,
-            roi_mask,
-        )
-        brown_mask = cv2.cvtColor(brown.mask, cv2.COLOR_GRAY2BGR)
+        histogram_image = None
+        brown_mask = None
+        if self.diagnostics_enabled:
+            histogram_image = self.histogram_generator.process(
+                white_balance,
+                roi_mask,
+            )
+            brown_mask = cv2.cvtColor(brown.mask, cv2.COLOR_GRAY2BGR)
 
         processing_ms = (time.perf_counter() - start) * 1000
 
@@ -92,13 +128,7 @@ class FrameProcessor:
                 if is_stable
                 else "Stabilizing"
             ),
-            tea_quality=(
-                self.analysis_metrics.classify_quality(
-                    stable_brown_percentage
-                )
-                if is_stable
-                else "Stabilizing"
-            ),
+            tea_quality="",
             confidence=min(100.0, (samples / window) * 100.0),
             processing_ms=processing_ms,
         )

@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 import re
 
 import cv2
@@ -12,12 +13,14 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
 from SciCam.camera_worker import CameraWorker
 from SciCam.camera_settings import CameraSettings
+from SciCam.camera_control_settings import CameraControlSettings
 from SciCam.frame_converter import FrameConverter
 from SciCam.inspection_history import (
     DEFAULT_IMAGE_DIR,
@@ -25,6 +28,7 @@ from SciCam.inspection_history import (
     InspectionHistoryStore,
 )
 from SciCam.processing.frame_processor import FrameProcessor
+from SciCam.report_generator import InspectionReportGenerator
 
 from .history_panel import HistoryPanel
 from .inspection_panel import InspectionPanel
@@ -44,6 +48,9 @@ class MainWindow(QMainWindow):
 
         self.camera_thread = None
         self.camera_worker = None
+        self._active_camera_source = None
+        self._pending_camera_source = None
+        self._reading_active = False
         self._closing = False
         self._shutdown_timer = QTimer(self)
         self._shutdown_timer.setSingleShot(True)
@@ -53,22 +60,29 @@ class MainWindow(QMainWindow):
 
         self.frame_processor = FrameProcessor()
         self.camera_settings = CameraSettings()
+        self.camera_control_settings = CameraControlSettings()
         self.history_store = InspectionHistoryStore()
+        self.report_generator = InspectionReportGenerator(
+            self.frame_processor.analysis_metrics
+        )
 
         # Store latest inspection result
         self.last_result = None
 
         self._configure_window()
         self._build_ui()
+        self.control_panel.apply_control_settings(
+            self.camera_control_settings.values
+        )
         self._connect_signals()
+        self._apply_control_settings_to_processor()
         self._load_history()
 
-        # Try the configured network camera when the event loop starts.
+        # Connect the configured RTSP camera by default. USB cameras remain
+        # selectable from the camera menu.
         QTimer.singleShot(
             0,
-            lambda: self.start_camera(
-                self.camera_settings.rtsp_url
-            ),
+            lambda: self.start_camera(self.camera_settings.rtsp_url),
         )
 
     # ---------------------------------------------------------
@@ -106,14 +120,22 @@ class MainWindow(QMainWindow):
         self.inspection_panel = InspectionPanel()
         self.result_panel = ResultPanel()
 
-        content_layout.addWidget(self.control_panel, 1)
-        content_layout.addWidget(self.inspection_panel, 3)
-        content_layout.addWidget(self.result_panel, 1)
+        # Stable side-panel widths prevent live result text and slider updates
+        # from repeatedly changing the horizontal layout allocation.
+        self.control_panel.setFixedWidth(360)
+        self.result_panel.setFixedWidth(330)
+
+        content_layout.addWidget(self.control_panel)
+        content_layout.addWidget(self.inspection_panel, 1)
+        content_layout.addWidget(self.result_panel)
 
         main_layout.addLayout(content_layout)
 
         self.history_panel = HistoryPanel()
         self.history_panel.setFixedHeight(220)
+        self.control_panel.email_widget.set_payload_provider(
+            self._selected_history_email
+        )
 
         main_layout.addWidget(self.history_panel)
 
@@ -131,6 +153,12 @@ class MainWindow(QMainWindow):
         self.control_panel.disconnect_requested.connect(
             self.stop_camera
         )
+        self.control_panel.start_reading_requested.connect(
+            self.start_reading
+        )
+        self.control_panel.stop_reading_requested.connect(
+            self.stop_reading
+        )
 
         self.control_panel.save_requested.connect(
             self.save_inspection
@@ -144,8 +172,52 @@ class MainWindow(QMainWindow):
             self.frame_processor.set_averaging_window
         )
 
+        self.control_panel.exposure_changed.connect(
+            self.frame_processor.set_exposure
+        )
+        self.control_panel.gain_changed.connect(
+            self.frame_processor.set_gain
+        )
+        self.control_panel.brightness_changed.connect(
+            self.frame_processor.set_brightness
+        )
+        self.control_panel.contrast_changed.connect(
+            self.frame_processor.set_contrast
+        )
+        self.control_panel.saturation_changed.connect(
+            self.frame_processor.set_saturation
+        )
+        self.control_panel.gamma_changed.connect(
+            self.frame_processor.set_gamma
+        )
+        self.control_panel.temperature_changed.connect(
+            self.frame_processor.set_temperature
+        )
+        self.control_panel.tint_changed.connect(
+            self.frame_processor.set_tint
+        )
+        self.control_panel.control_settings_changed.connect(
+            self.save_control_settings
+        )
+        self.control_panel.control_settings_changed.connect(
+            self.reprocess_paused_frame
+        )
+        self.control_panel.auto_white_balance_changed.connect(
+            self.set_auto_white_balance
+        )
+        self.control_panel.auto_exposure_changed.connect(
+            self.set_auto_exposure
+        )
+        self.control_panel.auto_focus_changed.connect(
+            self.set_auto_focus
+        )
+
         self.control_panel.config_requested.connect(
             self.configure_metrics
+        )
+
+        self.control_panel.email_status_changed.connect(
+            self.statusBar().showMessage
         )
 
         self.history_panel.image_requested.connect(
@@ -161,14 +233,44 @@ class MainWindow(QMainWindow):
     def start_camera(self, source):
 
         if self.camera_thread is not None:
+            if source == self._active_camera_source:
+                self.statusBar().showMessage(
+                    f"Camera {source} is already connected."
+                )
+                return
+
+            # CameraWorker owns its capture and must finish releasing it before
+            # another source is opened. Remember the requested source and
+            # start it from _camera_finished once shutdown is complete.
+            self._pending_camera_source = source
+            self.statusBar().showMessage(
+                f"Switching camera to {source}..."
+            )
+            self.stop_camera()
             return
 
+        self._pending_camera_source = None
+        self._active_camera_source = source
         self.frame_processor.reset_average()
         self.camera_thread = QThread()
 
         self.camera_worker = CameraWorker()
 
         self.camera_worker.set_camera(source)
+        self.camera_worker.set_frame_processor(self.frame_processor)
+        self.camera_worker.set_reading_enabled(True)
+        self._reading_active = True
+        self.control_panel.set_reading_active(True)
+        if not isinstance(source, str):
+            self.camera_worker.set_auto_exposure(
+                self.control_panel.auto_exposure.isChecked()
+            )
+            self.camera_worker.set_auto_white_balance(
+                self.control_panel.auto_white_balance.isChecked()
+            )
+            self.camera_worker.set_auto_focus(
+                self.control_panel.auto_focus.isChecked()
+            )
 
         self.camera_worker.moveToThread(
             self.camera_thread
@@ -178,8 +280,14 @@ class MainWindow(QMainWindow):
             self.camera_worker.run
         )
 
-        self.camera_worker.frame_ready.connect(
-            self.update_frame
+        self.camera_worker.result_ready.connect(
+            self.update_result
+        )
+        self.camera_worker.paused_result_ready.connect(
+            self.update_paused_result
+        )
+        self.camera_worker.processing_error.connect(
+            self.show_processing_error
         )
 
         self.camera_worker.finished.connect(
@@ -206,12 +314,21 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------
 
-    def update_frame(self, frame):
+    def update_result(self, result):
+
+        if not self._reading_active:
+            return
+
+        self._display_result(result)
+
+    def update_paused_result(self, result):
+        if self._reading_active:
+            return
+        self._display_result(result)
+
+    def _display_result(self, result):
 
         try:
-
-            result = self.frame_processor.process(frame)
-
             # Store latest inspection
             self.last_result = result
 
@@ -220,20 +337,12 @@ class MainWindow(QMainWindow):
             )
 
             self.inspection_panel.set_white_balance_image(
-                FrameConverter.to_qimage(result.white_balance)
-            )
-
-            self.inspection_panel.set_mask_image(
-                FrameConverter.to_qimage(result.brown_mask)
-            )
-
-            if result.histogram_image is not None:
-
-                self.inspection_panel.set_histogram_image(
-                    FrameConverter.to_qimage(
-                        result.histogram_image
+                FrameConverter.to_qimage(
+                    self.frame_processor.sample_roi.crop_around_sample(
+                        result.white_balance
                     )
                 )
+            )
 
             self.result_panel.update_results(result)
 
@@ -242,6 +351,11 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 f"Processing Error : {ex}"
             )
+
+    def show_processing_error(self, error):
+        self.statusBar().showMessage(
+            f"Processing Error : {error}"
+        )
 
     # ---------------------------------------------------------
 
@@ -317,6 +431,9 @@ class MainWindow(QMainWindow):
             "image_path": image_path.relative_to(
                 PROJECT_ROOT
             ).as_posix(),
+            "average_rgb": self.last_result.average_rgb,
+            "average_lab": self.last_result.average_lab,
+            "brightness": self.last_result.brightness,
         }
 
         try:
@@ -348,31 +465,129 @@ class MainWindow(QMainWindow):
 
     def show_history_image(self, image_path, sample_id):
         path = PROJECT_ROOT / image_path
-        pixmap = QPixmap(str(path))
+        record = self.history_panel.selected_record()
+        if record is None or record["image_path"] != image_path:
+            QMessageBox.warning(
+                self,
+                "History record unavailable",
+                "The selected inspection record is unavailable.",
+            )
+            return
+        try:
+            report_path = self.report_generator.generate(record, path)
+        except (OSError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, "Report unavailable", str(error))
+            return
+
+        pixmap = QPixmap(str(report_path))
         if pixmap.isNull():
             QMessageBox.warning(
                 self,
-                "Image unavailable",
-                f"Saved image was not found:\n{path}",
+                "Report unavailable",
+                f"Generated report could not be displayed:\n{report_path}",
             )
             return
 
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"Saved Sample: {sample_id}")
-        dialog.resize(800, 600)
+        dialog.setWindowTitle(f"Inspection Report: {sample_id}")
+        dialog.resize(850, 900)
         layout = QVBoxLayout(dialog)
         image_label = QLabel()
         image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         image_label.setPixmap(
             pixmap.scaled(
-                760,
-                540,
+                790,
+                800,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
         )
         layout.addWidget(image_label)
+
+        send_email_button = QPushButton("Send This Report by Email")
+        send_email_button.clicked.connect(
+            lambda: self._send_previewed_history_email(
+                image_path,
+                sample_id,
+                report_path,
+                send_email_button,
+            )
+        )
+        layout.addWidget(send_email_button)
         dialog.exec()
+
+    # ---------------------------------------------------------
+
+    def _send_previewed_history_email(
+        self,
+        image_path,
+        sample_id,
+        report_path,
+        button,
+    ):
+        record = self.history_panel.selected_record()
+        if (
+            record is None
+            or record["image_path"] != image_path
+            or record["sample_id"] != sample_id
+        ):
+            QMessageBox.warning(
+                self,
+                "History record unavailable",
+                "The previewed history record is no longer selected.",
+            )
+            return
+
+        try:
+            payload = self._selected_history_email(report_path)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "Email unavailable", str(error))
+            return
+
+        button.setEnabled(False)
+        self.control_panel.email_widget.send_succeeded.connect(
+            button.deleteLater
+        )
+        self.control_panel.email_widget.send_failed.connect(
+            lambda _error: button.setEnabled(True)
+        )
+        self.control_panel.email_widget.send_email(**payload)
+
+    # ---------------------------------------------------------
+
+    def _selected_history_email(self, prepared_report_path=None):
+        record = self.history_panel.selected_record()
+        if record is None:
+            raise ValueError(
+                "Select an inspection history record before sending email."
+            )
+
+        image_path = PROJECT_ROOT / record["image_path"]
+        if not image_path.is_file():
+            raise ValueError(f"Saved image was not found: {image_path}")
+
+        report_path = (
+            Path(prepared_report_path)
+            if prepared_report_path is not None
+            else self.report_generator.generate(record, image_path)
+        )
+        subject = f"Tea quality assessment: {record['sample_id']}"
+        message = (
+            "TeaVision Edge inspection result\n\n"
+            f"Sample ID: {record['sample_id']}\n"
+            f"Captured: {record['captured_at'].replace('T', ' ')}\n"
+            f"Brown content: {record['brown_percentage']:.2f}%\n"
+            f"Fermentation: {record['fermentation_status']}\n"
+            f"Tea quality: {record['tea_quality']}\n"
+            f"Confidence: {record['confidence']:.2f}\n"
+            f"Processing time: {record['processing_ms']:.2f} ms\n\n"
+            "The generated tea quality assessment report is attached."
+        )
+        return {
+            "subject": subject,
+            "message": message,
+            "attachments": [report_path],
+        }
 
     # ---------------------------------------------------------
 
@@ -415,6 +630,67 @@ class MainWindow(QMainWindow):
         if self.camera_worker is not None:
             self.camera_worker.stop()
 
+    def start_reading(self):
+        if self.camera_worker is None:
+            self.statusBar().showMessage("No camera is connected.")
+            return
+        self.frame_processor.reset_average()
+        self.camera_worker.set_reading_enabled(True)
+        self._reading_active = True
+        self.control_panel.set_reading_active(True)
+        self.statusBar().showMessage("Camera reading started.")
+
+    def stop_reading(self):
+        if self.camera_worker is None:
+            self.statusBar().showMessage("No camera is connected.")
+            return
+        self.camera_worker.set_reading_enabled(False)
+        self._reading_active = False
+        self.control_panel.set_reading_active(False)
+        self.statusBar().showMessage(
+            "Camera reading paused; parameter controls remain enabled."
+        )
+
+    def reprocess_paused_frame(self):
+        if self.camera_worker is not None and not self._reading_active:
+            self.camera_worker.request_frozen_frame_reprocess()
+
+    def set_auto_white_balance(self, enabled):
+        if self.camera_worker is not None:
+            self.camera_worker.set_auto_white_balance(enabled)
+
+    def set_auto_exposure(self, enabled):
+        if self.camera_worker is not None:
+            self.camera_worker.set_auto_exposure(enabled)
+
+    def set_auto_focus(self, enabled):
+        if self.camera_worker is not None:
+            self.camera_worker.set_auto_focus(enabled)
+
+    def _apply_control_settings_to_processor(self):
+        values = self.control_panel.control_settings()
+        self.frame_processor.set_exposure(values["exposure"])
+        self.frame_processor.set_gain(values["gain"])
+        self.frame_processor.set_brightness(values["brightness"])
+        self.frame_processor.set_contrast(values["contrast"])
+        self.frame_processor.set_saturation(values["saturation"])
+        self.frame_processor.set_gamma(values["gamma"])
+        self.frame_processor.set_temperature(values["temperature"])
+        self.frame_processor.set_tint(values["tint"])
+        self.frame_processor.set_averaging_window(
+            values["averaging_window"]
+        )
+
+    def save_control_settings(self):
+        try:
+            self.camera_control_settings.save(
+                self.control_panel.control_settings()
+            )
+        except OSError as error:
+            self.statusBar().showMessage(
+                f"Could not save camera controls: {error}"
+            )
+
     # ---------------------------------------------------------
 
     def _camera_finished(self):
@@ -423,6 +699,22 @@ class MainWindow(QMainWindow):
         self.frame_processor.reset_average()
         self.camera_worker = None
         self.camera_thread = None
+        self._active_camera_source = None
+        self._reading_active = False
+        self.control_panel.set_reading_active(False)
+
+        pending_source = self._pending_camera_source
+        self._pending_camera_source = None
+
+        if pending_source is not None and not self._closing:
+            self.statusBar().showMessage(
+                f"Connecting camera {pending_source}..."
+            )
+            QTimer.singleShot(
+                0,
+                lambda source=pending_source: self.start_camera(source),
+            )
+            return
 
         self.statusBar().showMessage(
             "Camera Disconnected"

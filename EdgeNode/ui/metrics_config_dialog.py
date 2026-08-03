@@ -6,6 +6,8 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
+    QLabel,
     QMessageBox,
     QVBoxLayout,
 )
@@ -14,7 +16,7 @@ from SciCam.processing.analysis_metrics import AnalysisMetrics
 
 
 class MetricsConfigDialog(QDialog):
-    """Editor for fermentation and tea-quality brown-value limits."""
+    """Editor for the five fermentation classification ranges."""
 
     def __init__(self, metrics: AnalysisMetrics, parent=None) -> None:
         super().__init__(parent)
@@ -23,42 +25,32 @@ class MetricsConfigDialog(QDialog):
         self.setMinimumWidth(440)
 
         layout = QVBoxLayout(self)
-        fermentation_group = QGroupBox("Fermentation thresholds")
+        fermentation_group = QGroupBox("Fermentation index settings")
         fermentation_form = QFormLayout(fermentation_group)
-        quality_group = QGroupBox("Tea quality thresholds")
-        quality_form = QFormLayout(quality_group)
 
         fermentation = metrics.data["fermentation"]
-        quality = metrics.data["tea_quality"]
 
-        self.under_max = self._spin(
-            fermentation["under_fermented_max"]
-        )
-        self.perfect_max = self._spin(fermentation["perfect_max"])
-        self.poor_max = self._spin(quality["poor_max"])
-        self.moderate_max = self._spin(quality["moderate_max"])
-        self.good_max = self._spin(quality["good_max"])
-
-        fermentation_form.addRow(
-            "Under Fermented: 0 to",
-            self.under_max,
-        )
-        fermentation_form.addRow(
-            "Perfect: above previous to",
-            self.perfect_max,
-        )
-        quality_form.addRow("Poor Quality: 0 to", self.poor_max)
-        quality_form.addRow(
-            "Moderate Quality: above previous to",
-            self.moderate_max,
-        )
-        quality_form.addRow(
-            "Good: above previous to",
-            self.good_max,
-        )
+        self.range_inputs = {}
+        labels = {
+            "under_poor": "Under Fermented (Poor)",
+            "under_moderate": "Under Fermented (Moderate)",
+            "good": "Good Fermentation",
+            "over_moderate": "Over Fermented (Moderate)",
+            "over_poor": "Over Fermented (Poor)",
+        }
+        for key, label in labels.items():
+            range_data = fermentation[key]
+            from_spin = self._spin(range_data["from"])
+            to_spin = self._spin(range_data["to"])
+            range_layout = QHBoxLayout()
+            range_layout.addWidget(QLabel("From"))
+            range_layout.addWidget(from_spin)
+            range_layout.addWidget(QLabel("To"))
+            range_layout.addWidget(to_spin)
+            fermentation_form.addRow(label, range_layout)
+            self.range_inputs[key] = (from_spin, to_spin)
 
         layout.addWidget(fermentation_group)
-        layout.addWidget(quality_group)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -72,7 +64,7 @@ class MetricsConfigDialog(QDialog):
     def _spin(value: float) -> QDoubleSpinBox:
         spin = QDoubleSpinBox()
         spin.setRange(0.0, 100.0)
-        spin.setDecimals(2)
+        spin.setDecimals(0)
         spin.setSuffix(" %")
         spin.setValue(float(value))
         return spin
@@ -80,13 +72,11 @@ class MetricsConfigDialog(QDialog):
     def _save(self) -> None:
         data = {
             "fermentation": {
-                "under_fermented_max": self.under_max.value(),
-                "perfect_max": self.perfect_max.value(),
-            },
-            "tea_quality": {
-                "poor_max": self.poor_max.value(),
-                "moderate_max": self.moderate_max.value(),
-                "good_max": self.good_max.value(),
+                key: {
+                    "from": controls[0].value(),
+                    "to": controls[1].value(),
+                }
+                for key, controls in self.range_inputs.items()
             },
         }
         try:
@@ -95,4 +85,3 @@ class MetricsConfigDialog(QDialog):
             QMessageBox.warning(self, "Invalid thresholds", str(error))
             return
         self.accept()
-

@@ -1,11 +1,24 @@
 {
   "fermentation": {
-    "under_fermented_max": 40.0,
-    "perfect_max": 60.0
-  },
-  "tea_quality": {
-    "poor_max": 30.0,
-    "moderate_max": 50.0,
-    "good_max": 75.0
+    "under_poor": {
+      "from": 0.0,
+      "to": 80.0
+    },
+    "under_moderate": {
+      "from": 81.0,
+      "to": 85.0
+    },
+    "good": {
+      "from": 86.0,
+      "to": 90.0
+    },
+    "over_moderate": {
+      "from": 91.0,
+      "to": 95.0
+    },
+    "over_poor": {
+      "from": 96.0,
+      "to": 100.0
+    }
   }
 }

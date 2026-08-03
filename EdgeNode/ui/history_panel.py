@@ -89,6 +89,10 @@ class HistoryPanel(BasePanel):
         for col, value in enumerate(values):
             item = QTableWidgetItem(str(value))
             item.setData(Qt.ItemDataRole.UserRole, record["image_path"])
+            item.setData(
+                Qt.ItemDataRole.UserRole + 1,
+                dict(record),
+            )
             self.table.setItem(row, col, item)
 
     def _on_row_clicked(self, row, _column):
@@ -99,3 +103,13 @@ class HistoryPanel(BasePanel):
                 item.data(Qt.ItemDataRole.UserRole),
                 sample_item.text(),
             )
+
+    def selected_record(self):
+        """Return the selected inspection record, if any."""
+        row = self.table.currentRow()
+        if row < 0:
+            return None
+        item = self.table.item(row, 0)
+        if item is None:
+            return None
+        return item.data(Qt.ItemDataRole.UserRole + 1)
