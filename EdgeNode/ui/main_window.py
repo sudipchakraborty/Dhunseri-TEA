@@ -28,6 +28,9 @@ from SciCam.inspection_history import (
     InspectionHistoryStore,
 )
 from SciCam.processing.frame_processor import FrameProcessor
+from SciCam.processing.reference_colour_correction import (
+    ReferenceColourCorrector,
+)
 from SciCam.report_generator import InspectionReportGenerator
 
 from .history_panel import HistoryPanel
@@ -65,6 +68,7 @@ class MainWindow(QMainWindow):
         self.report_generator = InspectionReportGenerator(
             self.frame_processor.analysis_metrics
         )
+        self.reference_colour_corrector = ReferenceColourCorrector()
 
         # Store latest inspection result
         self.last_result = None
@@ -73,6 +77,11 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self.control_panel.apply_control_settings(
             self.camera_control_settings.values
+        )
+        self.inspection_panel.load_reference_image(
+            self.camera_control_settings.values.get(
+                "reference_image_path", ""
+            )
         )
         self._connect_signals()
         self._apply_control_settings_to_processor()
@@ -223,6 +232,12 @@ class MainWindow(QMainWindow):
         self.history_panel.image_requested.connect(
             self.show_history_image
         )
+        self.inspection_panel.correction_requested.connect(
+            self.correct_to_reference
+        )
+        self.inspection_panel.reference_changed.connect(
+            self.reference_image_changed
+        )
 
         self.control_panel.rtsp_ip_save_requested.connect(
             self.save_rtsp_ip
@@ -355,6 +370,49 @@ class MainWindow(QMainWindow):
     def show_processing_error(self, error):
         self.statusBar().showMessage(
             f"Processing Error : {error}"
+        )
+
+    def correct_to_reference(self, reference_path):
+        if self.last_result is None:
+            QMessageBox.warning(
+                self,
+                "Correction unavailable",
+                "Wait for a camera image before applying correction.",
+            )
+            return
+        reference = cv2.imread(reference_path)
+        if reference is None:
+            QMessageBox.warning(
+                self,
+                "Correction unavailable",
+                "The selected reference image could not be loaded.",
+            )
+            return
+
+        self.statusBar().showMessage("Calculating reference correction...")
+        current = self.control_panel.control_settings()
+        source = self.last_result.original
+        source_mask = self.frame_processor.sample_roi.create_mask(source)
+        try:
+            values, before_error, after_error = (
+                self.reference_colour_corrector.correct(
+                    source,
+                    source_mask,
+                    reference,
+                    current,
+                )
+            )
+        except (TypeError, ValueError, cv2.error) as error:
+            QMessageBox.warning(self, "Correction unavailable", str(error))
+            return
+
+        for name, value in values.items():
+            getattr(self.control_panel, name).setValue(value)
+        self.save_control_settings()
+        self.reprocess_paused_frame()
+        self.statusBar().showMessage(
+            "Reference correction applied "
+            f"(colour error {before_error:.1f} → {after_error:.1f})."
         )
 
     # ---------------------------------------------------------
@@ -683,13 +741,25 @@ class MainWindow(QMainWindow):
 
     def save_control_settings(self):
         try:
+            values = self.control_panel.control_settings()
+            values["reference_image_path"] = (
+                str(self.inspection_panel.reference_image_path)
+                if self.inspection_panel.reference_image_path is not None
+                else ""
+            )
             self.camera_control_settings.save(
-                self.control_panel.control_settings()
+                values
             )
         except OSError as error:
             self.statusBar().showMessage(
                 f"Could not save camera controls: {error}"
             )
+
+    def reference_image_changed(self, _path):
+        self.save_control_settings()
+        self.statusBar().showMessage(
+            "Reference image selected and saved."
+        )
 
     # ---------------------------------------------------------
 

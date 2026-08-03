@@ -1,4 +1,14 @@
-from PySide6.QtWidgets import QGridLayout
+from pathlib import Path
+
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QGridLayout,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .base_panel import BasePanel
 from .image_viewer import ImageViewer
@@ -8,6 +18,9 @@ class InspectionPanel(BasePanel):
     """
     Displays inspection images.
     """
+
+    correction_requested = Signal(str)
+    reference_changed = Signal(str)
 
     def __init__(self):
         super().__init__("Inspection Area")
@@ -20,15 +33,41 @@ class InspectionPanel(BasePanel):
 
         self.original_viewer = ImageViewer("Original")
         self.white_balance_viewer = ImageViewer("Adjusted Colour")
+        self.reference_viewer = ImageViewer("Reference Image")
+        self.select_reference_button = QPushButton(
+            "Select Reference Image"
+        )
+        self.correction_button = QPushButton("Correction")
+        self.correction_button.setEnabled(False)
+        self.select_reference_button.clicked.connect(
+            self.select_reference_image
+        )
+        self.correction_button.clicked.connect(
+            lambda: self.correction_requested.emit(
+                str(self._reference_image_path)
+            )
+        )
+        self._reference_image_path = None
         self.mask_viewer = ImageViewer("Brown Mask")
         self.histogram_viewer = ImageViewer("Histogram")
 
-        # Show the raw feed and the slider-adjusted result side by side. Keep
-        # mask and histogram viewers available for future diagnostics only.
+        reference_panel = QWidget()
+        reference_layout = QVBoxLayout(reference_panel)
+        reference_layout.setContentsMargins(0, 0, 0, 0)
+        reference_layout.setSpacing(5)
+        reference_layout.addWidget(self.reference_viewer, 1)
+        reference_layout.addWidget(self.select_reference_button)
+        reference_layout.addWidget(self.correction_button)
+
+        # Original and selected real-colour reference share the left column;
+        # the adjusted preview remains the large comparison view on the right.
         layout.addWidget(self.original_viewer, 0, 0)
-        layout.addWidget(self.white_balance_viewer, 0, 1)
+        layout.addWidget(reference_panel, 1, 0)
+        layout.addWidget(self.white_balance_viewer, 0, 1, 2, 1)
         layout.setColumnStretch(0, 1)
         layout.setColumnStretch(1, 2)
+        layout.setRowStretch(0, 1)
+        layout.setRowStretch(1, 1)
 
         self.content_layout.addLayout(layout)
 
@@ -45,3 +84,45 @@ class InspectionPanel(BasePanel):
 
     def set_histogram_image(self, image):
         self.histogram_viewer.set_image(image)
+
+    def select_reference_image(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Real-Colour Reference Image",
+            "",
+            "Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)",
+        )
+        if not file_path:
+            return
+        if self.load_reference_image(file_path):
+            self.reference_changed.emit(file_path)
+
+    def load_reference_image(self, file_path):
+        path = Path(file_path) if file_path else None
+        if path is None or not path.is_file():
+            self._reference_image_path = None
+            self.reference_viewer.clear()
+            self.correction_button.setEnabled(False)
+            if path is not None:
+                self.select_reference_button.setToolTip(
+                    f"Reference image not found: {path}"
+                )
+            return False
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            self.reference_viewer.clear()
+            self._reference_image_path = None
+            self.correction_button.setEnabled(False)
+            self.select_reference_button.setToolTip(
+                "The selected image could not be loaded."
+            )
+            return False
+        self.reference_viewer.set_pixmap(pixmap)
+        self._reference_image_path = path
+        self.correction_button.setEnabled(True)
+        self.select_reference_button.setToolTip(str(path))
+        return True
+
+    @property
+    def reference_image_path(self):
+        return self._reference_image_path

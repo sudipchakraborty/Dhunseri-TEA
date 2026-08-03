@@ -20,8 +20,8 @@ class ColourAdjustmentProcessor(ImageProcessor):
         self.tint = 50
 
     @staticmethod
-    def _value(value: int) -> int:
-        return max(0, min(100, int(value)))
+    def _value(value: int | float) -> float:
+        return max(0.0, min(100.0, float(value)))
 
     def set_exposure(self, value: int) -> None:
         self.exposure = self._value(value)

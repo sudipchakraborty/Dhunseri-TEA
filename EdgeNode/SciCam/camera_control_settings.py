@@ -23,6 +23,7 @@ DEFAULT_VALUES = {
     "auto_exposure": False,
     "auto_white_balance": False,
     "auto_focus": False,
+    "reference_image_path": "",
 }
 
 
@@ -52,6 +53,10 @@ class CameraControlSettings:
         ):
             if name in data:
                 values[name] = bool(data[name])
+        if "reference_image_path" in data:
+            values["reference_image_path"] = str(
+                data["reference_image_path"] or ""
+            )
         return values
 
     def load(self) -> dict:
