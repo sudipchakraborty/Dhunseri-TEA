@@ -15,12 +15,12 @@ class CameraSettings:
 
     def __init__(self, path: Path = DEFAULT_CAMERA_CONFIG) -> None:
         self.path = Path(path)
-        self.rtsp_ip = "192.168.0.135"
+        self.rtsp_ip = "192.168.0.201"
         self.load()
 
     @property
     def rtsp_url(self) -> str:
-        return f"rtsp://{self.rtsp_ip}:8554/picam"
+        return f"rtsp://admin:DPDYWJ@{self.rtsp_ip}:554/Streaming/Channels/101"
 
     @staticmethod
     def validate_ip(value: str) -> str:
@@ -43,4 +43,3 @@ class CameraSettings:
         with self.path.open("w", encoding="utf-8") as file:
             json.dump({"rtsp_ip": self.rtsp_ip}, file, indent=2)
             file.write("\n")
-

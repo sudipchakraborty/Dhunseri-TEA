@@ -8,11 +8,11 @@ from .app_paths import application_root
 
 PROJECT_ROOT = application_root()
 DEFAULT_DATABASE = PROJECT_ROOT / "data" / "inspection_history.db"
-DEFAULT_IMAGE_DIR = PROJECT_ROOT / "data" / "sample_images"
+DEFAULT_IMAGE_DIR = PROJECT_ROOT / "data" / "evidence"
 
 
-class InspectionHistoryStore:
-    """Persistent SQLite storage for saved sample inspections."""
+class EventHistoryStore:
+    """Persistent SQLite storage for AI-camera detection events."""
 
     def __init__(self, database_path: Path = DEFAULT_DATABASE) -> None:
         self.database_path = Path(database_path)
@@ -27,64 +27,33 @@ class InspectionHistoryStore:
         with closing(self._connect()) as connection:
             connection.execute(
                 """
-                CREATE TABLE IF NOT EXISTS inspections (
+                CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    captured_at TEXT NOT NULL,
-                    sample_id TEXT NOT NULL,
-                    brown_percentage REAL NOT NULL,
-                    fermentation_status TEXT NOT NULL,
-                    tea_quality TEXT NOT NULL,
-                    confidence REAL NOT NULL,
-                    processing_ms REAL NOT NULL,
-                    image_path TEXT NOT NULL,
-                    average_rgb TEXT NOT NULL DEFAULT '0,0,0',
-                    average_lab TEXT NOT NULL DEFAULT '0,0,0',
-                    brightness REAL NOT NULL DEFAULT 0
+                    event_date TEXT NOT NULL,
+                    event_name TEXT NOT NULL,
+                    evidence_path TEXT NOT NULL
                 )
                 """
             )
-            columns = {
-                row[1] for row in connection.execute(
-                    "PRAGMA table_info(inspections)"
-                ).fetchall()
-            }
-            migrations = {
-                "average_rgb": "TEXT NOT NULL DEFAULT '0,0,0'",
-                "average_lab": "TEXT NOT NULL DEFAULT '0,0,0'",
-                "brightness": "REAL NOT NULL DEFAULT 0",
-            }
-            for name, declaration in migrations.items():
-                if name not in columns:
-                    connection.execute(
-                        f"ALTER TABLE inspections ADD COLUMN {name} {declaration}"
-                    )
             connection.commit()
 
     def add(self, record: dict) -> None:
         with closing(self._connect()) as connection:
             connection.execute(
                 """
-                INSERT INTO inspections (
-                    captured_at, sample_id, brown_percentage,
-                    fermentation_status, tea_quality, confidence,
-                    processing_ms, image_path, average_rgb, average_lab,
-                    brightness
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO events (
+                    event_date, event_name, evidence_path
+                ) VALUES (?, ?, ?)
                 """,
                 (
-                    record["captured_at"],
-                    record["sample_id"],
-                    record["brown_percentage"],
-                    record["fermentation_status"],
-                    record["tea_quality"],
-                    record["confidence"],
-                    record["processing_ms"],
-                    record["image_path"],
-                    ",".join(str(value) for value in record["average_rgb"]),
-                    ",".join(str(value) for value in record["average_lab"]),
-                    record["brightness"],
+                    record["event_date"],
+                    record["event_name"],
+                    record["evidence_path"],
                 ),
             )
+            record["rowid"] = connection.execute(
+                "SELECT last_insert_rowid()"
+            ).fetchone()[0]
             connection.commit()
 
     def all_newest_first(self) -> list[dict]:
@@ -92,22 +61,26 @@ class InspectionHistoryStore:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 """
-                SELECT captured_at, sample_id, brown_percentage,
-                       fermentation_status, tea_quality, confidence,
-                       processing_ms, image_path, average_rgb, average_lab,
-                       brightness
-                FROM inspections
-                ORDER BY captured_at DESC, id DESC
+                SELECT id AS rowid, event_date, event_name, evidence_path
+                FROM events
+                ORDER BY event_date DESC, id DESC
                 """
             ).fetchall()
-        records = []
-        for row in rows:
-            record = dict(row)
-            record["average_rgb"] = tuple(
-                int(float(value)) for value in record["average_rgb"].split(",")
+        return [dict(row) for row in rows]
+
+    def clear(self) -> int:
+        """Delete all event rows while preserving saved evidence files."""
+        with closing(self._connect()) as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM events"
+            ).fetchone()[0]
+            connection.execute("DELETE FROM events")
+            connection.execute(
+                "DELETE FROM sqlite_sequence WHERE name = 'events'"
             )
-            record["average_lab"] = tuple(
-                float(value) for value in record["average_lab"].split(",")
-            )
-            records.append(record)
-        return records
+            connection.commit()
+        return count
+
+
+# Backward-compatible import for older integrations.
+InspectionHistoryStore = EventHistoryStore

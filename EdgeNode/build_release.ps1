@@ -23,7 +23,11 @@ try {
         --windowed `
         --name TeaVisionEdge `
         --add-data "ui\dark_theme.qss;ui" `
+        --add-data "models\yolov8n.pt;models" `
+        --add-data "models\person_mask.pt;models" `
+        --add-data "models\gun_detection.pt;models" `
         --collect-all cv2 `
+        --collect-all ultralytics `
         main.py
 
     if ($LASTEXITCODE -ne 0) {

@@ -1,3 +1,6 @@
+# cd '.\EdgeNode'
+# .\.venv\Scripts\Activate.ps1
+
 import sys
 from pathlib import Path
 
@@ -27,9 +30,9 @@ def main() -> None:
 
     app = QApplication(sys.argv)
 
-    app.setApplicationName("TeaVision Edge")
-    app.setApplicationDisplayName("TeaVision Edge")
-    app.setOrganizationName("TeaVision")
+    app.setApplicationName("Visual AI")
+    app.setApplicationDisplayName("Visual AI Camera")
+    app.setOrganizationName("Graphite India Limited")
 
     load_stylesheet(app)
 

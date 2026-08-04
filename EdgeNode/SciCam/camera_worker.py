@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-from queue import Empty, SimpleQueue
 
 import cv2
 
@@ -17,9 +16,6 @@ class CameraWorker(QObject):
     """
 
     frame_ready = Signal(object)
-    result_ready = Signal(object)
-    paused_result_ready = Signal(object)
-    processing_error = Signal(str)
     finished = Signal()
 
     def __init__(self):
@@ -29,12 +25,7 @@ class CameraWorker(QObject):
         self._camera_source = 0
         self._capture = None
         self._rtsp_camera = None
-        self._frame_interval = 0.1
-        self._property_requests = SimpleQueue()
-        self._frame_processor = None
-        self._reading_enabled = True
-        self._last_processed_frame = None
-        self._reprocess_requested = False
+        self._frame_pending = False
 
     # -------------------------------------------------
 
@@ -42,25 +33,13 @@ class CameraWorker(QObject):
         """Select a USB camera index or an RTSP URL."""
         self._camera_source = source
 
-    def set_frame_processor(self, processor):
-        self._frame_processor = processor
-
-    def set_reading_enabled(self, enabled: bool):
-        # A bool assignment is atomic in CPython. The capture loop continues
-        # while paused so camera controls remain available and RTSP stays live.
-        self._reading_enabled = bool(enabled)
-
-    def request_frozen_frame_reprocess(self):
-        """Apply new parameters to the last displayed frame while paused."""
-        if not self._reading_enabled:
-            self._reprocess_requested = True
-
     # -------------------------------------------------
 
     @Slot()
     def run(self):
 
         self._running = True
+        self._frame_pending = False
 
         if isinstance(self._camera_source, str):
             self._rtsp_camera = RTSPCamera(self._camera_source)
@@ -84,42 +63,10 @@ class CameraWorker(QObject):
             return
 
         try:
-            last_emitted = 0.0
-
             while self._running:
-
-                while True:
-                    try:
-                        prop, value = self._property_requests.get_nowait()
-                    except Empty:
-                        break
-                    if self._capture is not None:
-                        self._capture.set(prop, value)
-
-                if (
-                    not self._reading_enabled
-                    and self._reprocess_requested
-                    and self._last_processed_frame is not None
-                    and self._frame_processor is not None
-                ):
-                    self._reprocess_requested = False
-                    try:
-                        paused_result = self._frame_processor.process(
-                            self._last_processed_frame
-                        )
-                    except Exception as error:
-                        self.processing_error.emit(str(error))
-                    else:
-                        self.paused_result_ready.emit(paused_result)
 
                 if self._rtsp_camera is not None:
                     ok, frame = self._rtsp_camera.read()
-                    if ok:
-                        # The PiCam RTSP feed used by this application arrives
-                        # with RGB channel order, whereas all downstream OpenCV
-                        # processing expects BGR. Without this swap, yellow is
-                        # displayed as cyan because red and blue are reversed.
-                        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 else:
                     ok, frame = self._capture.read()
 
@@ -133,28 +80,13 @@ class CameraWorker(QObject):
                         continue
                     break
 
-                now = time.monotonic()
-                if (
-                    self._reading_enabled
-                    and now - last_emitted >= self._frame_interval
-                ):
-                    self._last_processed_frame = frame.copy()
-                    if self._frame_processor is None:
-                        self.frame_ready.emit(frame)
-                    else:
-                        try:
-                            result = self._frame_processor.process(frame)
-                        except Exception as error:
-                            self.processing_error.emit(str(error))
-                        else:
-                            self.result_ready.emit(result)
-                    last_emitted = now
+                if not self._frame_pending:
+                    self._frame_pending = True
+                    self.frame_ready.emit(frame)
 
         finally:
 
             self._running = False
-            self._last_processed_frame = None
-            self._reprocess_requested = False
 
             if self._capture is not None:
                 self._capture.release()
@@ -175,14 +107,18 @@ class CameraWorker(QObject):
         # the application. The worker owns and releases capture in run().
         self._running = False
 
+    def frame_consumed(self):
+        """Allow one fresh frame after the UI finishes the prior frame."""
+        self._frame_pending = False
+
     # -------------------------------------------------
     # Camera Properties
     # -------------------------------------------------
 
     def _set_property(self, prop, value):
-        # UI requests can arrive from another thread. Apply them inside the
-        # capture loop, where VideoCapture is owned.
-        self._property_requests.put((prop, value))
+
+        if self._capture is not None:
+            self._capture.set(prop, value)
 
     def set_exposure(self, value):
         self._set_property(cv2.CAP_PROP_EXPOSURE, value)

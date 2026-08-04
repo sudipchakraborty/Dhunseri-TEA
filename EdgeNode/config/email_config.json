@@ -4,11 +4,11 @@
   "use_tls": true,
   "use_ssl": false,
   "sender_email": "sudip.embedded@gmail.com",
-  "sender_name": "TeaVision Edge",
+  "sender_name": "Graphite India Demo",
   "password": "ahsbetqvzqybqsib",
   "recipients": [
     "sudip.embedded@gmail.com"
   ],
-  "subject": "TeaVision Edge notification",
-  "message": "This is an automated notification from TeaVision Edge."
+  "subject": "Visual AI alert",
+  "message": "This is an automated notification from VisualAI"
 }
