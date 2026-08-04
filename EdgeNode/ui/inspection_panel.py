@@ -5,6 +5,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
     QGridLayout,
+    QHBoxLayout,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -20,7 +21,10 @@ class InspectionPanel(BasePanel):
     """
 
     correction_requested = Signal(str)
+    cancel_correction_requested = Signal()
     reference_changed = Signal(str)
+    apply_filter_requested = Signal()
+    discard_filter_requested = Signal()
 
     def __init__(self):
         super().__init__("Inspection Area")
@@ -38,7 +42,9 @@ class InspectionPanel(BasePanel):
             "Select Reference Image"
         )
         self.correction_button = QPushButton("Correction")
+        self.cancel_correction_button = QPushButton("Cancel Correction")
         self.correction_button.setEnabled(False)
+        self.cancel_correction_button.setEnabled(False)
         self.select_reference_button.clicked.connect(
             self.select_reference_image
         )
@@ -47,9 +53,33 @@ class InspectionPanel(BasePanel):
                 str(self._reference_image_path)
             )
         )
+        self.cancel_correction_button.clicked.connect(
+            self.cancel_correction_requested.emit
+        )
         self._reference_image_path = None
         self.mask_viewer = ImageViewer("Brown Mask")
         self.histogram_viewer = ImageViewer("Histogram")
+
+        self.apply_filter_button = QPushButton("Apply Filter")
+        self.discard_filter_button = QPushButton("Discard Filter")
+        self.apply_filter_button.setEnabled(True)
+        self.discard_filter_button.setEnabled(False)
+        self.apply_filter_button.clicked.connect(self.apply_filter_requested.emit)
+        self.discard_filter_button.clicked.connect(self.discard_filter_requested.emit)
+
+        filter_buttons = QWidget()
+        filter_layout = QHBoxLayout(filter_buttons)
+        filter_layout.setContentsMargins(0, 0, 0, 0)
+        filter_layout.setSpacing(5)
+        filter_layout.addWidget(self.apply_filter_button)
+        filter_layout.addWidget(self.discard_filter_button)
+
+        corrected_panel = QWidget()
+        corrected_layout = QVBoxLayout(corrected_panel)
+        corrected_layout.setContentsMargins(0, 0, 0, 0)
+        corrected_layout.setSpacing(5)
+        corrected_layout.addWidget(self.white_balance_viewer, 1)
+        corrected_layout.addWidget(filter_buttons)
 
         reference_panel = QWidget()
         reference_layout = QVBoxLayout(reference_panel)
@@ -58,12 +88,13 @@ class InspectionPanel(BasePanel):
         reference_layout.addWidget(self.reference_viewer, 1)
         reference_layout.addWidget(self.select_reference_button)
         reference_layout.addWidget(self.correction_button)
+        reference_layout.addWidget(self.cancel_correction_button)
 
         # Original and selected real-colour reference share the left column;
         # the adjusted preview remains the large comparison view on the right.
         layout.addWidget(self.original_viewer, 0, 0)
         layout.addWidget(reference_panel, 1, 0)
-        layout.addWidget(self.white_balance_viewer, 0, 1, 2, 1)
+        layout.addWidget(corrected_panel, 0, 1, 2, 1)
         layout.setColumnStretch(0, 1)
         layout.setColumnStretch(1, 2)
         layout.setRowStretch(0, 1)
@@ -78,6 +109,13 @@ class InspectionPanel(BasePanel):
 
     def set_white_balance_image(self, image):
         self.white_balance_viewer.set_image(image)
+
+    def set_filter_active(self, active):
+        self.apply_filter_button.setEnabled(not active)
+        self.discard_filter_button.setEnabled(active)
+
+    def set_correction_active(self, active):
+        self.cancel_correction_button.setEnabled(active)
 
     def set_mask_image(self, image):
         self.mask_viewer.set_image(image)

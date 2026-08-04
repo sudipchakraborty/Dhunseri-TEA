@@ -17,6 +17,30 @@ CORRECTED_CONTROLS = (
 )
 
 
+def dominant_colour_fill(image, mask=None, bin_size=16):
+    """Fill an image with its most common quantized BGR colour."""
+    if image is None or image.ndim != 3 or image.shape[2] != 3:
+        raise ValueError("A BGR colour image is required.")
+    if not 1 <= bin_size <= 256:
+        raise ValueError("bin_size must be between 1 and 256.")
+
+    pixels = image[mask > 0] if mask is not None else image.reshape(-1, 3)
+    if not len(pixels):
+        raise ValueError("The image has no usable colour pixels.")
+
+    quantized = pixels.astype(np.uint32) // bin_size
+    bins_per_channel = (256 + bin_size - 1) // bin_size
+    keys = (
+        quantized[:, 0] * bins_per_channel * bins_per_channel
+        + quantized[:, 1] * bins_per_channel
+        + quantized[:, 2]
+    )
+    winning_key = np.bincount(keys).argmax()
+    dominant_pixels = pixels[keys == winning_key]
+    colour = np.median(dominant_pixels, axis=0).astype(np.uint8)
+    return np.full_like(image, colour), tuple(int(value) for value in colour)
+
+
 class ReferenceColourCorrector:
     """Fit software colour controls to a real-colour reference image."""
 

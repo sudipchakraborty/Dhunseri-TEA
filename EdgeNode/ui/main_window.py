@@ -30,6 +30,7 @@ from SciCam.inspection_history import (
 from SciCam.processing.frame_processor import FrameProcessor
 from SciCam.processing.reference_colour_correction import (
     ReferenceColourCorrector,
+    dominant_colour_fill,
 )
 from SciCam.report_generator import InspectionReportGenerator
 
@@ -69,6 +70,9 @@ class MainWindow(QMainWindow):
             self.frame_processor.analysis_metrics
         )
         self.reference_colour_corrector = ReferenceColourCorrector()
+        self._dominant_filter_applied = False
+        self._dominant_filter_colour = None
+        self._settings_before_correction = None
 
         # Store latest inspection result
         self.last_result = None
@@ -235,8 +239,17 @@ class MainWindow(QMainWindow):
         self.inspection_panel.correction_requested.connect(
             self.correct_to_reference
         )
+        self.inspection_panel.cancel_correction_requested.connect(
+            self.cancel_reference_correction
+        )
         self.inspection_panel.reference_changed.connect(
             self.reference_image_changed
+        )
+        self.inspection_panel.apply_filter_requested.connect(
+            self.apply_dominant_filter
+        )
+        self.inspection_panel.discard_filter_requested.connect(
+            self.discard_dominant_filter
         )
 
         self.control_panel.rtsp_ip_save_requested.connect(
@@ -351,10 +364,18 @@ class MainWindow(QMainWindow):
                 FrameConverter.to_qimage(result.original)
             )
 
+            adjusted_image = result.white_balance
+            if self._dominant_filter_applied:
+                mask = self.frame_processor.sample_roi.create_mask(
+                    adjusted_image
+                )
+                adjusted_image, self._dominant_filter_colour = (
+                    dominant_colour_fill(adjusted_image, mask)
+                )
             self.inspection_panel.set_white_balance_image(
                 FrameConverter.to_qimage(
                     self.frame_processor.sample_roi.crop_around_sample(
-                        result.white_balance
+                        adjusted_image
                     )
                 )
             )
@@ -406,14 +427,57 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Correction unavailable", str(error))
             return
 
+        self._settings_before_correction = current.copy()
+        self.inspection_panel.set_correction_active(True)
         for name, value in values.items():
             getattr(self.control_panel, name).setValue(value)
         self.save_control_settings()
         self.reprocess_paused_frame()
         self.statusBar().showMessage(
             "Reference correction applied "
-            f"(colour error {before_error:.1f} → {after_error:.1f})."
+            f"(colour error {before_error:.1f} to {after_error:.1f})."
         )
+
+    def cancel_reference_correction(self):
+        if self._settings_before_correction is None:
+            return
+        previous = self._settings_before_correction
+        self._settings_before_correction = None
+        self.control_panel.apply_control_settings(previous)
+        self.save_control_settings()
+        self.reprocess_paused_frame()
+        self.inspection_panel.set_correction_active(False)
+        self.statusBar().showMessage(
+            "Reference correction cancelled; previous settings restored."
+        )
+
+    def apply_dominant_filter(self):
+        if self.last_result is None:
+            self.statusBar().showMessage(
+                "Wait for a camera image before applying the filter."
+            )
+            return
+        self._dominant_filter_applied = True
+        self.inspection_panel.set_filter_active(True)
+        self._display_result(self.last_result)
+        colour = self._dominant_filter_colour
+        colour_text = ""
+        if colour is not None:
+            blue, green, red = colour
+            colour_text = f" RGB({red}, {green}, {blue})"
+        self.statusBar().showMessage(
+            f"Dominant-colour filter applied.{colour_text}"
+        )
+
+    def discard_dominant_filter(self):
+        if not self._dominant_filter_applied:
+            return
+        self._dominant_filter_applied = False
+        self._dominant_filter_colour = None
+        self.inspection_panel.set_filter_active(False)
+        if self.last_result is not None:
+            self._display_result(self.last_result)
+        self.statusBar().showMessage("Dominant-colour filter discarded.")
 
     # ---------------------------------------------------------
 
