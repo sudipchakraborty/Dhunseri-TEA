@@ -29,10 +29,7 @@ from SciCam.inspection_history import (
     InspectionHistoryStore,
 )
 from SciCam.processing.frame_processor import FrameProcessor
-from SciCam.processing.reference_colour_correction import (
-    ReferenceColourCorrector,
-    dominant_colour_fill,
-)
+from SciCam.processing.reference_colour_correction import ReferenceColourCorrector
 from SciCam.report_generator import InspectionReportGenerator
 
 from .history_panel import HistoryPanel
@@ -205,6 +202,9 @@ class MainWindow(QMainWindow):
         self.control_panel.averaging_window_changed.connect(
             self.frame_processor.set_averaging_window
         )
+        self.control_panel.pipeline_changed.connect(
+            self._set_pipeline_options
+        )
 
         self.control_panel.exposure_changed.connect(
             self.frame_processor.set_exposure
@@ -268,12 +268,6 @@ class MainWindow(QMainWindow):
         )
         self.inspection_panel.reference_clear_requested.connect(
             self.clear_reference_image
-        )
-        self.inspection_panel.apply_filter_requested.connect(
-            self.apply_dominant_filter
-        )
-        self.inspection_panel.discard_filter_requested.connect(
-            self.discard_dominant_filter
         )
 
         self.control_panel.rtsp_ip_save_requested.connect(
@@ -433,13 +427,10 @@ class MainWindow(QMainWindow):
         )
 
     def _process_still_image(self, frame):
-        processor = FrameProcessor(
-            averaging_window=self.control_panel.averaging_window.value()
-        )
-        processor.analysis_metrics = self.frame_processor.analysis_metrics
+        self.frame_processor.reset_average()
         result = None
-        for _index in range(processor.brown_average.window_size):
-            result = processor.process(frame)
+        for _index in range(self.frame_processor.brown_average.window_size):
+            result = self.frame_processor.process(frame)
         return result
 
     def _display_result(self, result):
@@ -452,20 +443,13 @@ class MainWindow(QMainWindow):
                 FrameConverter.to_qimage(result.original)
             )
 
-            adjusted_image = result.white_balance
-            if self._dominant_filter_applied:
-                mask = self.frame_processor.sample_roi.create_mask(
-                    adjusted_image
-                )
-                adjusted_image, self._dominant_filter_colour = (
-                    dominant_colour_fill(adjusted_image, mask)
+            display_image = result.white_balance
+            if self.control_panel.pipeline_settings()["sample_roi_mask"]:
+                display_image = self.frame_processor.sample_roi.crop_around_sample(
+                    display_image
                 )
             self.inspection_panel.set_white_balance_image(
-                FrameConverter.to_qimage(
-                    self.frame_processor.sample_roi.crop_around_sample(
-                        adjusted_image
-                    )
-                )
+                FrameConverter.to_qimage(display_image)
             )
 
             self.result_panel.update_results(result)
@@ -974,6 +958,12 @@ class MainWindow(QMainWindow):
         self.frame_processor.set_averaging_window(
             values["averaging_window"]
         )
+        self.frame_processor.set_pipeline_options(values["pipeline"])
+
+    def _set_pipeline_options(self, options):
+        self.frame_processor.set_pipeline_options(options)
+        if self._is_image_source(self._active_camera_source):
+            self.start_image_source(self._active_camera_source[1])
 
     def save_control_settings(self):
         try:

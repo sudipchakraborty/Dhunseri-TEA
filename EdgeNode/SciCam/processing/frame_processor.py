@@ -15,6 +15,7 @@ from .analysis_metrics import AnalysisMetrics
 from .moving_average import MovingAverage
 from .pipeline import ProcessingPipeline
 from .processing_result import ProcessingResult
+from .reference_colour_correction import dominant_colour_fill
 from .sample_roi import CircularSampleROI
 
 
@@ -44,6 +45,19 @@ class FrameProcessor:
         self.diagnostics_enabled = diagnostics_enabled
         self._smoothed_image = None
         self._smoothing_alpha = 0.35
+        self.pipeline_options = {
+            "colour_adjustment": False,
+            "image_smoothing": False,
+            "sample_roi_mask": False,
+            "dominant_colour_fill": False,
+        }
+
+    def set_pipeline_options(self, options: dict) -> None:
+        self.pipeline_options = {
+            name: bool(options.get(name, False))
+            for name in self.pipeline_options
+        }
+        self._reset_image_smoothing()
 
     def set_averaging_window(self, window_size: int) -> None:
         self.brown_average.set_window_size(window_size)
@@ -90,13 +104,17 @@ class FrameProcessor:
     def process(self, frame: np.ndarray) -> ProcessingResult:
         start = time.perf_counter()
 
-        adjusted = self.pipeline.process(frame)
-        if (
+        adjusted = (
+            self.pipeline.process(frame)
+            if self.pipeline_options["colour_adjustment"]
+            else frame.copy()
+        )
+        if self.pipeline_options["image_smoothing"] and (
             self._smoothed_image is None
             or self._smoothed_image.shape != adjusted.shape
         ):
             white_balance = adjusted
-        else:
+        elif self.pipeline_options["image_smoothing"]:
             white_balance = cv2.addWeighted(
                 adjusted,
                 self._smoothing_alpha,
@@ -104,13 +122,22 @@ class FrameProcessor:
                 1.0 - self._smoothing_alpha,
                 0.0,
             )
+        else:
+            white_balance = adjusted
         self._smoothed_image = white_balance.copy()
         roi_mask = self.sample_roi.create_mask(white_balance)
-        masked_white_balance = cv2.bitwise_and(
-            white_balance,
-            white_balance,
-            mask=roi_mask,
-        )
+        display_image = white_balance
+        if self.pipeline_options["sample_roi_mask"]:
+            display_image = cv2.bitwise_and(
+                white_balance,
+                white_balance,
+                mask=roi_mask,
+            )
+        if self.pipeline_options["dominant_colour_fill"]:
+            display_image, _colour = dominant_colour_fill(
+                display_image,
+                roi_mask if self.pipeline_options["sample_roi_mask"] else None,
+            )
         brown = self.brown_detector.process(white_balance, roi_mask)
         stable_brown_percentage = self.brown_average.add(
             brown.percentage
@@ -137,7 +164,7 @@ class FrameProcessor:
 
         return ProcessingResult(
             original=frame,
-            white_balance=masked_white_balance,
+            white_balance=display_image,
             brown_mask=brown_mask,
             histogram_image=histogram_image,
             brown_percentage=stable_brown_percentage,

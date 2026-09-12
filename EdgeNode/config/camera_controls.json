@@ -1,15 +1,21 @@
 {
   "exposure": 45,
-  "gain": 59,
+  "gain": 56,
   "brightness": 56,
   "contrast": 57,
   "saturation": 64,
-  "gamma": 78,
+  "gamma": 96,
   "temperature": 75,
   "tint": 47,
   "averaging_window": 20,
   "auto_exposure": false,
   "auto_white_balance": false,
   "auto_focus": false,
-  "reference_image_path": ""
+  "reference_image_path": "",
+  "pipeline": {
+    "colour_adjustment": false,
+    "image_smoothing": false,
+    "sample_roi_mask": true,
+    "dominant_colour_fill": false
+  }
 }

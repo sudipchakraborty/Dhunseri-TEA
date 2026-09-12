@@ -24,6 +24,12 @@ DEFAULT_VALUES = {
     "auto_white_balance": False,
     "auto_focus": False,
     "reference_image_path": "",
+    "pipeline": {
+        "colour_adjustment": False,
+        "image_smoothing": False,
+        "sample_roi_mask": False,
+        "dominant_colour_fill": False,
+    },
 }
 
 
@@ -57,6 +63,12 @@ class CameraControlSettings:
             values["reference_image_path"] = str(
                 data["reference_image_path"] or ""
             )
+        pipeline = data.get("pipeline", {})
+        if isinstance(pipeline, dict):
+            values["pipeline"] = {
+                name: bool(pipeline.get(name, enabled))
+                for name, enabled in DEFAULT_VALUES["pipeline"].items()
+            }
         return values
 
     def load(self) -> dict:

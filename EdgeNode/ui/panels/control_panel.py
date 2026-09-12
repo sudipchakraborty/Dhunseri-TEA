@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSlider,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -69,6 +70,7 @@ class ControlPanel(BasePanel):
     auto_focus_changed = Signal(bool)
     averaging_window_changed = Signal(int)
     control_settings_changed = Signal()
+    pipeline_changed = Signal(dict)
 
     # --------------------------------------------------
 
@@ -104,6 +106,15 @@ class ControlPanel(BasePanel):
     # --------------------------------------------------
 
     def _build_ui(self):
+
+        self.tabs = QTabWidget()
+        settings_tab = QWidget()
+        settings_layout = QVBoxLayout(settings_tab)
+        settings_layout.setContentsMargins(6, 8, 6, 6)
+        settings_layout.setSpacing(10)
+        parameters_tab = QWidget()
+        parameters_layout = QVBoxLayout(parameters_tab)
+        parameters_layout.setContentsMargins(6, 8, 6, 6)
 
         # ---------------------------------------------
         # Camera
@@ -236,9 +247,8 @@ class ControlPanel(BasePanel):
         # Layout
         # ---------------------------------------------
 
-        self.content_layout.addWidget(camera_group)
-        self.content_layout.addWidget(parameter_group)
-        self.content_layout.addWidget(option_group)
+        settings_layout.addWidget(camera_group)
+        settings_layout.addWidget(option_group)
 
         button_layout = QGridLayout()
         button_layout.setHorizontalSpacing(8)
@@ -251,9 +261,32 @@ class ControlPanel(BasePanel):
         button_layout.addWidget(self.config_button, 2, 1)
         button_layout.addWidget(self.email_widget, 3, 0)
         button_layout.addWidget(self.close_button, 3, 1)
-        self.content_layout.addLayout(button_layout)
+        settings_layout.addLayout(button_layout)
+        settings_layout.addStretch()
 
-        self.content_layout.addStretch()
+        parameters_layout.addWidget(parameter_group)
+        parameters_layout.addStretch()
+
+        pipeline_tab = QWidget()
+        pipeline_layout = QVBoxLayout(pipeline_tab)
+        pipeline_layout.setContentsMargins(8, 10, 8, 8)
+        pipeline_group = QGroupBox("Pype Line Selection")
+        pipeline_group_layout = QVBoxLayout(pipeline_group)
+        self.pipeline_checkboxes = {
+            "colour_adjustment": QCheckBox("Colour Adjustment"),
+            "image_smoothing": QCheckBox("Frame Smoothing"),
+            "sample_roi_mask": QCheckBox("Sample ROI Mask"),
+            "dominant_colour_fill": QCheckBox("Dominant Colour Fill"),
+        }
+        for checkbox in self.pipeline_checkboxes.values():
+            pipeline_group_layout.addWidget(checkbox)
+        pipeline_layout.addWidget(pipeline_group)
+        pipeline_layout.addStretch()
+
+        self.tabs.addTab(settings_tab, "Camera Settings")
+        self.tabs.addTab(parameters_tab, "Parameters")
+        self.tabs.addTab(pipeline_tab, "Pipeline")
+        self.content_layout.addWidget(self.tabs)
 
     # --------------------------------------------------
 
@@ -386,6 +419,9 @@ class ControlPanel(BasePanel):
                 lambda _value: self.control_settings_changed.emit()
             )
 
+        for checkbox in self.pipeline_checkboxes.values():
+            checkbox.toggled.connect(self._pipeline_changed)
+
     # --------------------------------------------------
 
     def _slider(self):
@@ -496,7 +532,19 @@ class ControlPanel(BasePanel):
             "auto_exposure": self.auto_exposure.isChecked(),
             "auto_white_balance": self.auto_white_balance.isChecked(),
             "auto_focus": self.auto_focus.isChecked(),
+            "pipeline": self.pipeline_settings(),
         }
+
+    def pipeline_settings(self):
+        return {
+            name: checkbox.isChecked()
+            for name, checkbox in self.pipeline_checkboxes.items()
+        }
+
+    def _pipeline_changed(self, _checked):
+        values = self.pipeline_settings()
+        self.pipeline_changed.emit(values)
+        self.control_settings_changed.emit()
 
     def apply_control_settings(self, values):
         for name in (
@@ -507,6 +555,9 @@ class ControlPanel(BasePanel):
         self.auto_exposure.setChecked(values["auto_exposure"])
         self.auto_white_balance.setChecked(values["auto_white_balance"])
         self.auto_focus.setChecked(values["auto_focus"])
+        pipeline = values.get("pipeline", {})
+        for name, checkbox in self.pipeline_checkboxes.items():
+            checkbox.setChecked(bool(pipeline.get(name, False)))
 
     def set_reading_active(self, active):
         self.start_reading_button.setEnabled(not active)
