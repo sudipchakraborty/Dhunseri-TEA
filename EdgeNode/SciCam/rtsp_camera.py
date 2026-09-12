@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from threading import Condition, Event, Thread
 
@@ -27,6 +28,10 @@ class RTSPCamera:
 
     def open(self) -> bool:
         self.release()
+
+        # TCP retransmits missing RTSP packets. With UDP, packet loss can leave
+        # H.264 macroblocks incomplete and produce a visibly flashing frame.
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
 
         # FFmpeg is normally the most reliable OpenCV backend for RTSP.
         self._capture = cv2.VideoCapture(

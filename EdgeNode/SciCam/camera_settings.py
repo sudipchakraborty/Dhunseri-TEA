@@ -15,12 +15,13 @@ class CameraSettings:
 
     def __init__(self, path: Path = DEFAULT_CAMERA_CONFIG) -> None:
         self.path = Path(path)
-        self.rtsp_ip = "192.168.0.201"
+        self.rtsp_ip = "192.168.0.135"
+        self.image_path = ""
         self.load()
 
     @property
     def rtsp_url(self) -> str:
-        return f"rtsp://admin:DPDYWJ@{self.rtsp_ip}:554/Streaming/Channels/101"
+        return f"rtsp://{self.rtsp_ip}:8554/picam"
 
     @staticmethod
     def validate_ip(value: str) -> str:
@@ -31,15 +32,27 @@ class CameraSettings:
 
     def load(self) -> None:
         if not self.path.exists():
-            self.save(self.rtsp_ip)
+            self.save(self.rtsp_ip, self.image_path)
             return
         with self.path.open("r", encoding="utf-8") as file:
             data = json.load(file)
         self.rtsp_ip = self.validate_ip(data["rtsp_ip"])
+        self.image_path = str(data.get("image_path", "")).strip()
 
-    def save(self, value: str) -> None:
+    def save(self, value: str | None = None, image_path: str | None = None) -> None:
+        if value is None:
+            value = self.rtsp_ip
         self.rtsp_ip = self.validate_ip(value)
+        if image_path is not None:
+            self.image_path = str(image_path).strip()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("w", encoding="utf-8") as file:
-            json.dump({"rtsp_ip": self.rtsp_ip}, file, indent=2)
+            json.dump(
+                {
+                    "rtsp_ip": self.rtsp_ip,
+                    "image_path": self.image_path,
+                },
+                file,
+                indent=2,
+            )
             file.write("\n")

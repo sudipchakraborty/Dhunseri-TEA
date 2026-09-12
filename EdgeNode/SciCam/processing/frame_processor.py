@@ -42,41 +42,69 @@ class FrameProcessor:
         self.brown_average = MovingAverage(averaging_window)
         self.analysis_metrics = AnalysisMetrics()
         self.diagnostics_enabled = diagnostics_enabled
+        self._smoothed_image = None
+        self._smoothing_alpha = 0.35
 
     def set_averaging_window(self, window_size: int) -> None:
         self.brown_average.set_window_size(window_size)
 
     def reset_average(self) -> None:
         self.brown_average.reset()
+        self._smoothed_image = None
+
+    def _reset_image_smoothing(self) -> None:
+        self._smoothed_image = None
 
     def set_exposure(self, value: int) -> None:
         self.colour_adjustment.set_exposure(value)
+        self._reset_image_smoothing()
 
     def set_gain(self, value: int) -> None:
         self.colour_adjustment.set_gain(value)
+        self._reset_image_smoothing()
 
     def set_brightness(self, value: int) -> None:
         self.colour_adjustment.set_brightness(value)
+        self._reset_image_smoothing()
 
     def set_contrast(self, value: int) -> None:
         self.colour_adjustment.set_contrast(value)
+        self._reset_image_smoothing()
 
     def set_saturation(self, value: int) -> None:
         self.colour_adjustment.set_saturation(value)
+        self._reset_image_smoothing()
 
     def set_gamma(self, value: int) -> None:
         self.colour_adjustment.set_gamma(value)
+        self._reset_image_smoothing()
 
     def set_temperature(self, value: int) -> None:
         self.colour_adjustment.set_temperature(value)
+        self._reset_image_smoothing()
 
     def set_tint(self, value: int) -> None:
         self.colour_adjustment.set_tint(value)
+        self._reset_image_smoothing()
 
     def process(self, frame: np.ndarray) -> ProcessingResult:
         start = time.perf_counter()
 
-        white_balance = self.pipeline.process(frame)
+        adjusted = self.pipeline.process(frame)
+        if (
+            self._smoothed_image is None
+            or self._smoothed_image.shape != adjusted.shape
+        ):
+            white_balance = adjusted
+        else:
+            white_balance = cv2.addWeighted(
+                adjusted,
+                self._smoothing_alpha,
+                self._smoothed_image,
+                1.0 - self._smoothing_alpha,
+                0.0,
+            )
+        self._smoothed_image = white_balance.copy()
         roi_mask = self.sample_roi.create_mask(white_balance)
         masked_white_balance = cv2.bitwise_and(
             white_balance,

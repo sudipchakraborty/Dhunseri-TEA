@@ -45,9 +45,9 @@ class ResultPanel(BasePanel):
         brown_caption.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         self.brown_display = QLCDNumber()
-        # Whole percentage only. QLCDNumber right-aligns values within the
-        # available digit positions, keeping the readout near the percent sign.
-        self.brown_display.setDigitCount(3)
+        # Preserve hundredths so small colour changes remain visible. Five
+        # digits accommodates the full 0.00 to 100.00 percentage range.
+        self.brown_display.setDigitCount(5)
         self.brown_display.setSegmentStyle(
             QLCDNumber.SegmentStyle.Flat
         )
@@ -159,10 +159,10 @@ class ResultPanel(BasePanel):
     ):
 
         self.lbl_brown.setText(
-            f"{result.brown_percentage:.0f} %"
+            f"{result.brown_percentage:.2f} %"
         )
         self.brown_display.display(
-            f"{result.brown_percentage:.0f}"
+            f"{result.brown_percentage:.2f}"
         )
 
         self.lbl_status.setText(
@@ -199,8 +199,8 @@ class ResultPanel(BasePanel):
 
     def clear(self):
 
-        self.lbl_brown.setText("0 %")
-        self.brown_display.display("0")
+        self.lbl_brown.setText("0.00 %")
+        self.brown_display.display("0.00")
         self.lbl_status.setText("READY")
         self.lbl_fermentation.setText("Fermentation: Waiting")
         self.lbl_rgb.setText("(0, 0, 0)")

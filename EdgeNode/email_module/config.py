@@ -3,16 +3,11 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 import json
 from pathlib import Path
-import sys
+
+from SciCam.app_paths import application_root
 
 
-def _application_root() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path.cwd()
-
-
-DEFAULT_CONFIG_PATH = _application_root() / "config" / "email_config.json"
+DEFAULT_CONFIG_PATH = application_root() / "config" / "email_config.json"
 
 
 @dataclass

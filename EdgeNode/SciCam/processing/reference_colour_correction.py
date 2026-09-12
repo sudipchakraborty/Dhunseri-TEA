@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
-from scipy.optimize import least_squares
+from scipy.optimize import differential_evolution, least_squares
 
 from .colour_adjustment import ColourAdjustmentProcessor
 
 
 CORRECTED_CONTROLS = (
     "exposure",
+    "gain",
     "brightness",
+    "contrast",
     "saturation",
     "gamma",
     "temperature",
@@ -61,18 +63,21 @@ class ReferenceColourCorrector:
         lab = cv2.cvtColor(pixels, cv2.COLOR_BGR2LAB)
         return lab.reshape(-1, 3).mean(axis=0)
 
+    @staticmethod
+    def _bgr_mean(pixels):
+        return pixels.reshape(-1, 3).astype(np.float64).mean(axis=0)
+
     def correct(self, source, source_mask, reference, current):
         source_pixels = self._sample_pixels(source, source_mask)
         reference_pixels = self._sample_pixels(reference)
         target_lab = self._lab_mean(reference_pixels)
+        target_bgr = self._bgr_mean(reference_pixels)
         initial = np.array(
             [current[name] for name in CORRECTED_CONTROLS],
             dtype=np.float64,
         )
 
         processor = ColourAdjustmentProcessor()
-        processor.set_gain(current["gain"])
-        processor.set_contrast(current["contrast"])
 
         def apply(values):
             for name, value in zip(CORRECTED_CONTROLS, values):
@@ -80,25 +85,67 @@ class ReferenceColourCorrector:
             return processor.process(source_pixels)
 
         def residual(values):
-            difference = (self._lab_mean(apply(values)) - target_lab) / np.array(
-                [35.0, 22.0, 22.0]
-            )
+            adjusted = apply(values)
+            lab_difference = (
+                self._lab_mean(adjusted) - target_lab
+            ) / np.array([22.0, 14.0, 14.0])
+            bgr_difference = (
+                self._bgr_mean(adjusted) - target_bgr
+            ) / np.array([32.0, 32.0, 32.0])
             # Prefer the smallest practical movement when alternatives produce
-            # the same average colour, keeping the controls understandable.
-            regularization = (values - initial) / 1000.0
-            return np.concatenate((difference, regularization))
+            # similar colour, keeping the controls understandable.
+            regularization = (values - initial) / 1500.0
+            return np.concatenate(
+                (lab_difference, bgr_difference, regularization)
+            )
 
         before_error = float(
             np.linalg.norm(self._lab_mean(apply(initial)) - target_lab)
         )
-        fit = least_squares(
-            residual,
+        starts = [
             initial,
-            bounds=(np.zeros(len(initial)), np.full(len(initial), 100.0)),
-            max_nfev=80,
-            diff_step=0.05,
+            np.full(len(initial), 50.0),
+            np.array([35, 55, 25, 25, 80, 95, 80, 35], dtype=np.float64),
+            np.array([45, 60, 35, 35, 95, 80, 90, 25], dtype=np.float64),
+            np.array([25, 50, 20, 20, 100, 100, 100, 0], dtype=np.float64),
+        ]
+        fits = [
+            least_squares(
+                residual,
+                start,
+                bounds=(
+                    np.zeros(len(initial)),
+                    np.full(len(initial), 100.0),
+                ),
+                max_nfev=260,
+                diff_step=0.02,
+                xtol=1e-4,
+                ftol=1e-4,
+                gtol=1e-4,
+            )
+            for start in starts
+        ]
+
+        def colour_error(values):
+            adjusted = apply(values)
+            lab_error = np.linalg.norm(self._lab_mean(adjusted) - target_lab)
+            bgr_error = np.linalg.norm(self._bgr_mean(adjusted) - target_bgr)
+            return bgr_error + (lab_error * 0.45)
+
+        global_fit = differential_evolution(
+            colour_error,
+            [(0.0, 100.0)] * len(initial),
+            maxiter=70,
+            popsize=10,
+            polish=True,
+            seed=7,
+            tol=0.01,
+            workers=1,
         )
-        fitted = np.clip(np.rint(fit.x), 0, 100).astype(int)
+        candidates = [fit.x for fit in fits]
+        candidates.append(global_fit.x)
+        best_values = min(candidates, key=colour_error)
+        fitted = np.clip(np.rint(best_values), 0, 100).astype(int)
         after_error = float(
             np.linalg.norm(self._lab_mean(apply(fitted)) - target_lab)
         )

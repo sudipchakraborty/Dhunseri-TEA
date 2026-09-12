@@ -1,5 +1,6 @@
 from threading import Event
 from unittest.mock import patch
+import os
 
 import cv2
 import numpy as np
@@ -45,3 +46,13 @@ def test_rtsp_reader_returns_latest_frame_instead_of_queued_frames():
 
     assert ok
     assert np.all(frame == 3)
+
+
+def test_rtsp_reader_forces_tcp_transport():
+    fake = FakeCapture()
+    with patch.object(cv2, "VideoCapture", return_value=fake):
+        camera = RTSPCamera("rtsp://camera/stream")
+        assert camera.open()
+        camera.release()
+
+    assert os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] == "rtsp_transport;tcp"

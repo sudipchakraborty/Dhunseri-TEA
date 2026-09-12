@@ -14,12 +14,17 @@ class BrownDetectionResult:
 
 class BrownDetector:
     """
-    Detect brown regions using HSV thresholds.
+    Estimate brown content from the selected ROI.
 
-    Version 1:
-    - Simple HSV threshold
-    - Morphological cleanup
+    The mask remains HSV-based for visualization, but the displayed
+    percentage is a colour-strength estimate. The 0-to-100 validation images
+    are uniform colour samples rather than mixed brown/non-brown areas, so a
+    pure pixel-area threshold collapses most of them to 100%.
     """
+
+    LIGHT_TEA_RGB = np.array([239.5, 235.5, 232.0], dtype=np.float32)
+    FULL_BROWN_RGB = np.array([52.2, 31.7, 18.7], dtype=np.float32)
+    STRENGTH_GAMMA = 1.15
 
     def process(
         self,
@@ -76,13 +81,38 @@ class BrownDetector:
             else mask.shape[0] * mask.shape[1]
         )
 
-        percentage = (
+        area_percentage = (
             (brown_pixels / total_pixels) * 100.0
             if total_pixels
             else 0.0
         )
+        percentage = self._brown_strength_percentage(frame, roi_mask)
+        if percentage < 0.5 and area_percentage > 0.0:
+            percentage = area_percentage
 
         return BrownDetectionResult(
             mask=mask,
             percentage=percentage,
         )
+
+    def _brown_strength_percentage(
+        self,
+        frame: np.ndarray,
+        roi_mask: np.ndarray | None = None,
+    ) -> float:
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mean_rgb = np.array(
+            cv2.mean(rgb, mask=roi_mask)[:3],
+            dtype=np.float32,
+        )
+        brown_vector = self.FULL_BROWN_RGB - self.LIGHT_TEA_RGB
+        denominator = float(np.dot(brown_vector, brown_vector))
+        if denominator == 0.0:
+            return 0.0
+        strength = (
+            np.dot(mean_rgb - self.LIGHT_TEA_RGB, brown_vector)
+            / denominator
+        )
+        strength = float(np.clip(strength, 0.0, 1.0))
+        calibrated = strength ** self.STRENGTH_GAMMA
+        return calibrated * 100.0

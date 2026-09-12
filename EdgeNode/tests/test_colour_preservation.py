@@ -1,6 +1,9 @@
 import numpy as np
 
 from SciCam.processing.frame_processor import FrameProcessor
+from SciCam.processing.reference_colour_correction import (
+    ReferenceColourCorrector,
+)
 
 
 def test_frame_processor_preserves_dominant_object_colour():
@@ -48,3 +51,44 @@ def test_temperature_slider_warms_a_cool_image():
 
     assert warmed[2] > 110
     assert warmed[0] < 180
+
+
+def test_adjusted_image_smooths_single_frame_variation():
+    processor = FrameProcessor(averaging_window=1)
+    dark = np.full((100, 100, 3), 80, dtype=np.uint8)
+    bright = np.full((100, 100, 3), 120, dtype=np.uint8)
+
+    processor.process(dark)
+    smoothed = processor.process(bright).white_balance[50, 50, 0]
+
+    assert 80 < smoothed < 120
+
+
+def test_reference_correction_adds_channel_gains_for_close_colour_match():
+    source = np.full((100, 100, 3), (90, 104, 200), dtype=np.uint8)
+    reference = np.full((100, 100, 3), (0, 82, 154), dtype=np.uint8)
+    current = {
+        "exposure": 37,
+        "gain": 53,
+        "brightness": 47,
+        "contrast": 22,
+        "saturation": 76,
+        "gamma": 99,
+        "temperature": 99,
+        "tint": 70,
+    }
+
+    values, gains, before_error, after_error = (
+        ReferenceColourCorrector().correct(source, None, reference, current)
+    )
+    processor = FrameProcessor(averaging_window=1)
+    for name, value in values.items():
+        getattr(processor, f"set_{name}")(value)
+    processor.set_gain(current["gain"])
+    processor.set_contrast(current["contrast"])
+    processor.set_reference_colour_gains(gains)
+
+    corrected = processor.process(source).white_balance[50, 50]
+
+    assert after_error < before_error
+    assert np.linalg.norm(corrected.astype(float) - reference[50, 50]) < 4.0

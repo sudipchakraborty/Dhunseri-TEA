@@ -1,8 +1,26 @@
-# cd '.\EdgeNode'
-# .\.venv\Scripts\Activate.ps1
-
+import os
 import sys
 from pathlib import Path
+
+
+PROJECT_DIR = Path(__file__).resolve().parent
+VENV_PYTHON = PROJECT_DIR / ".venv" / "Scripts" / "python.exe"
+
+
+def use_project_python() -> None:
+    """Restart with the bundled environment when another Python is active."""
+
+    if not VENV_PYTHON.exists():
+        return
+    if Path(sys.executable).resolve() == VENV_PYTHON.resolve():
+        return
+    os.execv(
+        str(VENV_PYTHON),
+        [str(VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]],
+    )
+
+
+use_project_python()
 
 from PySide6.QtWidgets import QApplication
 
@@ -13,7 +31,7 @@ def load_stylesheet(app: QApplication) -> None:
     """Load the application stylesheet."""
 
     qss_path = (
-        Path(__file__).parent
+        PROJECT_DIR
         / "ui"
         / "dark_theme.qss"
     )
@@ -30,9 +48,9 @@ def main() -> None:
 
     app = QApplication(sys.argv)
 
-    app.setApplicationName("Visual AI")
-    app.setApplicationDisplayName("Visual AI Camera")
-    app.setOrganizationName("Graphite India Limited")
+    app.setApplicationName("TeaVision Edge")
+    app.setApplicationDisplayName("TeaVision Edge")
+    app.setOrganizationName("TeaVision")
 
     load_stylesheet(app)
 
