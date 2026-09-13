@@ -17,6 +17,7 @@ class CameraSettings:
         self.path = Path(path)
         self.rtsp_ip = "192.168.0.135"
         self.image_path = ""
+        self.captured_image_path = ""
         self.load()
 
     @property
@@ -38,19 +39,30 @@ class CameraSettings:
             data = json.load(file)
         self.rtsp_ip = self.validate_ip(data["rtsp_ip"])
         self.image_path = str(data.get("image_path", "")).strip()
+        self.captured_image_path = str(
+            data.get("captured_image_path", "")
+        ).strip()
 
-    def save(self, value: str | None = None, image_path: str | None = None) -> None:
+    def save(
+        self,
+        value: str | None = None,
+        image_path: str | None = None,
+        captured_image_path: str | None = None,
+    ) -> None:
         if value is None:
             value = self.rtsp_ip
         self.rtsp_ip = self.validate_ip(value)
         if image_path is not None:
             self.image_path = str(image_path).strip()
+        if captured_image_path is not None:
+            self.captured_image_path = str(captured_image_path).strip()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("w", encoding="utf-8") as file:
             json.dump(
                 {
                     "rtsp_ip": self.rtsp_ip,
                     "image_path": self.image_path,
+                    "captured_image_path": self.captured_image_path,
                 },
                 file,
                 indent=2,

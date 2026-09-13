@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -29,9 +30,11 @@ from SciCam.inspection_history import (
     InspectionHistoryStore,
 )
 from SciCam.processing.frame_processor import FrameProcessor
+from SciCam.processing.captured_image_roi import CapturedImageROISelector
 from SciCam.processing.reference_colour_correction import ReferenceColourCorrector
 from SciCam.report_generator import InspectionReportGenerator
 
+from .captured_image_panel import CapturedImagePanel
 from .history_panel import HistoryPanel
 from .inspection_panel import InspectionPanel
 from .metrics_config_dialog import MetricsConfigDialog
@@ -77,9 +80,12 @@ class MainWindow(QMainWindow):
             self.frame_processor.analysis_metrics
         )
         self.reference_colour_corrector = ReferenceColourCorrector()
+        self.captured_roi_selector = CapturedImageROISelector()
         self._dominant_filter_applied = False
         self._dominant_filter_colour = None
         self._settings_before_correction = None
+        self._live_result = None
+        self._captured_result = None
 
         # Store latest inspection result
         self.last_result = None
@@ -97,6 +103,10 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._apply_control_settings_to_processor()
         self._load_history()
+        if self.camera_settings.captured_image_path:
+            self.captured_image_panel.set_path(
+                self.camera_settings.captured_image_path
+            )
 
         # Connect the configured source by default. A saved image path is
         # reloaded for offline analysis; otherwise the RTSP camera remains the
@@ -146,7 +156,14 @@ class MainWindow(QMainWindow):
         self.control_panel.set_image_path(
             self.camera_settings.image_path
         )
+        self.inspection_tabs = QTabWidget()
         self.inspection_panel = InspectionPanel()
+        self.captured_image_panel = CapturedImagePanel()
+        self.inspection_tabs.addTab(self.inspection_panel, "Live Inspection")
+        self.inspection_tabs.addTab(
+            self.captured_image_panel,
+            "Captured Image Test",
+        )
         self.result_panel = ResultPanel()
 
         # Stable side-panel widths prevent live result text and slider updates
@@ -157,7 +174,7 @@ class MainWindow(QMainWindow):
         self.result_panel.setFixedWidth(300)
 
         content_layout.addWidget(self.control_panel)
-        content_layout.addWidget(self.inspection_panel, 1)
+        content_layout.addWidget(self.inspection_tabs, 1)
         content_layout.addWidget(self.result_panel)
 
         main_layout.addLayout(content_layout)
@@ -268,6 +285,18 @@ class MainWindow(QMainWindow):
         )
         self.inspection_panel.reference_clear_requested.connect(
             self.clear_reference_image
+        )
+        self.captured_image_panel.image_selected.connect(
+            self.analyze_captured_image
+        )
+        self.captured_image_panel.previous_requested.connect(
+            lambda: self.load_adjacent_captured_image(-1)
+        )
+        self.captured_image_panel.next_requested.connect(
+            lambda: self.load_adjacent_captured_image(1)
+        )
+        self.inspection_tabs.currentChanged.connect(
+            self._inspection_tab_changed
         )
 
         self.control_panel.rtsp_ip_save_requested.connect(
@@ -426,18 +455,92 @@ class MainWindow(QMainWindow):
             f"Image analysed: {Path(image_path).name}"
         )
 
-    def _process_still_image(self, frame):
+    def _process_still_image(self, frame, roi_mask=None):
         self.frame_processor.reset_average()
+        original_create_mask = self.frame_processor.sample_roi.create_mask
+        if roi_mask is not None:
+            self.frame_processor.sample_roi.create_mask = lambda _frame: roi_mask
         result = None
-        for _index in range(self.frame_processor.brown_average.window_size):
-            result = self.frame_processor.process(frame)
-        return result
+        try:
+            for _index in range(self.frame_processor.brown_average.window_size):
+                result = self.frame_processor.process(frame)
+            return result
+        finally:
+            self.frame_processor.sample_roi.create_mask = original_create_mask
+
+    def analyze_captured_image(self, image_path):
+        frame = cv2.imread(image_path)
+        if frame is None:
+            QMessageBox.warning(
+                self,
+                "Image unavailable",
+                f"The selected image could not be loaded:\n{image_path}",
+            )
+            return
+
+        try:
+            roi = self.captured_roi_selector.select(frame)
+            result = self._process_still_image(frame, roi.mask)
+        except Exception as error:
+            QMessageBox.warning(self, "Captured image analysis failed", str(error))
+            return
+
+        self.captured_image_panel.set_path(image_path)
+        try:
+            self.camera_settings.save(captured_image_path=image_path)
+        except (KeyError, TypeError, ValueError) as error:
+            self.statusBar().showMessage(
+                f"Captured image path was not saved: {error}"
+            )
+        self.captured_image_panel.original_viewer.set_image(
+            FrameConverter.to_qimage(frame)
+        )
+        self.captured_image_panel.roi_viewer.set_image(
+            FrameConverter.to_qimage(roi.overlay)
+        )
+        x, y, radius = roi.bounds
+        self.captured_image_panel.set_result(
+            result.brown_percentage,
+            result.confidence,
+            f"{roi.method}, center=({x}, {y}), radius={radius}px",
+        )
+        self._captured_result = result
+        self.last_result = result
+        self.result_panel.update_results(result)
+        self.statusBar().showMessage(
+            f"Captured image analysed: {Path(image_path).name}"
+        )
+
+    def load_adjacent_captured_image(self, direction):
+        current_path = Path(self.captured_image_panel.path_label.toolTip())
+        if not str(current_path) or not current_path.parent.is_dir():
+            current_path = Path(
+                r"C:\Users\sudip\OneDrive\ESTPL\PROJECTS\DHUNSERI-TEA"
+                r"\Captured Image"
+            )
+        folder = current_path.parent if current_path.is_file() else current_path
+        images = self._image_files_in_folder(folder)
+        if not images:
+            QMessageBox.warning(
+                self,
+                "Image unavailable",
+                "No image files were found in the captured image folder.",
+            )
+            return
+        try:
+            current_index = images.index(current_path.resolve())
+        except ValueError:
+            current_index = 0
+        next_index = (current_index + direction) % len(images)
+        self.analyze_captured_image(str(images[next_index]))
 
     def _display_result(self, result):
 
         try:
             # Store latest inspection
             self.last_result = result
+            if self.inspection_tabs.currentWidget() is self.inspection_panel:
+                self._live_result = result
 
             self.inspection_panel.set_original_image(
                 FrameConverter.to_qimage(result.original)
@@ -459,6 +562,16 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 f"Processing Error : {ex}"
             )
+
+    def _inspection_tab_changed(self, _index):
+        if self.inspection_tabs.currentWidget() is self.captured_image_panel:
+            if self._captured_result is not None:
+                self.last_result = self._captured_result
+                self.result_panel.update_results(self._captured_result)
+            return
+        if self._live_result is not None:
+            self.last_result = self._live_result
+            self.result_panel.update_results(self._live_result)
 
     def show_processing_error(self, error):
         self.statusBar().showMessage(
