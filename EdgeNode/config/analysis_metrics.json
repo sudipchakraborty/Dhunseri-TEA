@@ -2,22 +2,22 @@
   "fermentation": {
     "under_poor": {
       "from": 0.0,
-      "to": 80.0
+      "to": 81.0
     },
     "under_moderate": {
-      "from": 81.0,
-      "to": 85.0
+      "from": 82.0,
+      "to": 84.0
     },
     "good": {
-      "from": 86.0,
-      "to": 90.0
+      "from": 85.0,
+      "to": 87.0
     },
     "over_moderate": {
-      "from": 91.0,
-      "to": 95.0
+      "from": 88.0,
+      "to": 90.0
     },
     "over_poor": {
-      "from": 96.0,
+      "from": 91.0,
       "to": 100.0
     }
   }

@@ -1,25 +1,20 @@
-import cv2
+import numpy as np
 
 from SciCam.processing.white_balance import WhiteBalanceProcessor
 
-processor = WhiteBalanceProcessor()
 
-cap = cv2.VideoCapture(0)
+def test_white_balance_preserves_gray_image():
+    frame = np.full((20, 20, 3), 120, dtype=np.uint8)
 
-while True:
+    balanced = WhiteBalanceProcessor().process(frame)
 
-    ok, frame = cap.read()
+    assert np.array_equal(balanced, frame)
 
-    if not ok:
-        break
 
-    balanced = processor.process(frame)
+def test_white_balance_reduces_channel_bias():
+    frame = np.full((20, 20, 3), (60, 120, 180), dtype=np.uint8)
 
-    cv2.imshow("Original", frame)
-    cv2.imshow("White Balance", balanced)
+    balanced = WhiteBalanceProcessor().process(frame)
+    means = balanced.reshape(-1, 3).mean(axis=0)
 
-    if cv2.waitKey(1) == 27:
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+    assert means.max() - means.min() <= 1.0

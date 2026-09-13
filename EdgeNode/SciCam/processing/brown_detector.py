@@ -1,15 +1,131 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 
 import cv2
 import numpy as np
+
+from SciCam.app_paths import application_root
+
+
+DEFAULT_CALIBRATION_PATH = (
+    application_root()
+    / "config"
+    / "brown_calibration.json"
+)
 
 
 @dataclass
 class BrownDetectionResult:
     mask: np.ndarray
     percentage: float
+    confidence: float
+
+
+class BrownCalibration:
+    """Convert measured tea colour strength into calibrated brown percent."""
+
+    def __init__(self, path: Path = DEFAULT_CALIBRATION_PATH) -> None:
+        self.path = Path(path)
+        self.reference_light = BrownDetector.LIGHT_TEA_RGB.copy()
+        self.reference_brown = BrownDetector.FULL_BROWN_RGB.copy()
+        self.gamma = BrownDetector.STRENGTH_GAMMA
+        self.samples: list[dict] = []
+        self.coefficients: list[float] | None = None
+        self.model_type = "polynomial"
+        self.points: list[tuple[float, float]] = []
+        self.feature_min = 0.0
+        self.feature_max = 100.0
+        self.load()
+
+    def load(self) -> None:
+        if not self.path.exists():
+            return
+        with self.path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+        references = data.get("references", {})
+        if "light_tea_rgb" in references:
+            self.reference_light = np.array(
+                references["light_tea_rgb"],
+                dtype=np.float32,
+            )
+        if "full_brown_rgb" in references:
+            self.reference_brown = np.array(
+                references["full_brown_rgb"],
+                dtype=np.float32,
+            )
+        self.gamma = float(data.get("strength_gamma", self.gamma))
+        self.samples = list(data.get("samples", []))
+        model = data.get("model", {})
+        self.model_type = str(model.get("type", "polynomial"))
+        coefficients = model.get("coefficients")
+        if coefficients:
+            self.coefficients = [float(value) for value in coefficients]
+        points = model.get("points")
+        if points:
+            self.points = sorted(
+                (
+                    (float(point["feature"]), float(point["brown_percentage"]))
+                    for point in points
+                ),
+                key=lambda point: point[0],
+            )
+        feature_range = model.get("feature_range")
+        if feature_range and len(feature_range) == 2:
+            self.feature_min = float(feature_range[0])
+            self.feature_max = float(feature_range[1])
+
+    def strength_percentage(
+        self,
+        frame: np.ndarray,
+        roi_mask: np.ndarray | None = None,
+    ) -> float:
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mean_rgb = np.array(
+            cv2.mean(rgb, mask=roi_mask)[:3],
+            dtype=np.float32,
+        )
+        brown_vector = self.reference_brown - self.reference_light
+        denominator = float(np.dot(brown_vector, brown_vector))
+        if denominator == 0.0:
+            return 0.0
+        strength = (
+            np.dot(mean_rgb - self.reference_light, brown_vector)
+            / denominator
+        )
+        strength = float(np.clip(strength, 0.0, 1.0))
+        return (strength ** self.gamma) * 100.0
+
+    def apply(self, feature: float) -> float:
+        if self.model_type == "piecewise_linear" and self.points:
+            features = [point[0] for point in self.points]
+            labels = [point[1] for point in self.points]
+            value = float(np.interp(feature, features, labels))
+            return float(np.clip(value, 0.0, 100.0))
+        if not self.coefficients:
+            return float(np.clip(feature, 0.0, 100.0))
+        value = float(np.polyval(self.coefficients, feature))
+        return float(np.clip(value, 0.0, 100.0))
+
+    def confidence(self, feature: float, area_percentage: float) -> float:
+        confidence = 100.0
+        if self.samples and self.feature_max > self.feature_min:
+            if feature < self.feature_min:
+                distance = self.feature_min - feature
+            elif feature > self.feature_max:
+                distance = feature - self.feature_max
+            else:
+                distance = 0.0
+            span = self.feature_max - self.feature_min
+            confidence -= min(45.0, (distance / span) * 100.0)
+        elif not self.samples:
+            confidence -= 25.0
+
+        if area_percentage < 1.0 and feature > 5.0:
+            confidence -= 20.0
+        return float(np.clip(confidence, 0.0, 100.0))
 
 
 class BrownDetector:
@@ -25,6 +141,12 @@ class BrownDetector:
     LIGHT_TEA_RGB = np.array([239.5, 235.5, 232.0], dtype=np.float32)
     FULL_BROWN_RGB = np.array([52.2, 31.7, 18.7], dtype=np.float32)
     STRENGTH_GAMMA = 1.15
+
+    def __init__(
+        self,
+        calibration: BrownCalibration | None = None,
+    ) -> None:
+        self.calibration = calibration or BrownCalibration()
 
     def process(
         self,
@@ -86,33 +208,17 @@ class BrownDetector:
             if total_pixels
             else 0.0
         )
-        percentage = self._brown_strength_percentage(frame, roi_mask)
+        raw_strength = self.calibration.strength_percentage(frame, roi_mask)
+        percentage = self.calibration.apply(raw_strength)
         if percentage < 0.5 and area_percentage > 0.0:
             percentage = area_percentage
+        confidence = self.calibration.confidence(
+            raw_strength,
+            area_percentage,
+        )
 
         return BrownDetectionResult(
             mask=mask,
             percentage=percentage,
+            confidence=confidence,
         )
-
-    def _brown_strength_percentage(
-        self,
-        frame: np.ndarray,
-        roi_mask: np.ndarray | None = None,
-    ) -> float:
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        mean_rgb = np.array(
-            cv2.mean(rgb, mask=roi_mask)[:3],
-            dtype=np.float32,
-        )
-        brown_vector = self.FULL_BROWN_RGB - self.LIGHT_TEA_RGB
-        denominator = float(np.dot(brown_vector, brown_vector))
-        if denominator == 0.0:
-            return 0.0
-        strength = (
-            np.dot(mean_rgb - self.LIGHT_TEA_RGB, brown_vector)
-            / denominator
-        )
-        strength = float(np.clip(strength, 0.0, 1.0))
-        calibrated = strength ** self.STRENGTH_GAMMA
-        return calibrated * 100.0

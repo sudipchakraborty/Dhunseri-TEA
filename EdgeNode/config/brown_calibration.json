@@ -1,0 +1,219 @@
+{
+  "version": 1,
+  "description": "Fitted brown calibration. Prefer real fermented-tea images captured under production camera and lighting.",
+  "references": {
+    "light_tea_rgb": [
+      239.5,
+      235.5,
+      232.0
+    ],
+    "full_brown_rgb": [
+      52.20000076293945,
+      31.700000762939453,
+      18.700000762939453
+    ]
+  },
+  "strength_gamma": 1.15,
+  "samples": [
+    {
+      "image": "0percent.jpg",
+      "brown_percentage": 0.0,
+      "feature": 0.0
+    },
+    {
+      "image": "100percent.jpg",
+      "brown_percentage": 100.0,
+      "feature": 99.9994105102898
+    },
+    {
+      "image": "10percent.jpg",
+      "brown_percentage": 10.0,
+      "feature": 15.516403384113325
+    },
+    {
+      "image": "15percent.jpg",
+      "brown_percentage": 15.0,
+      "feature": 25.499920674286138
+    },
+    {
+      "image": "20percent.jpg",
+      "brown_percentage": 20.0,
+      "feature": 35.106847046613666
+    },
+    {
+      "image": "25percent.jpg",
+      "brown_percentage": 25.0,
+      "feature": 43.76279533474736
+    },
+    {
+      "image": "30percent.jpg",
+      "brown_percentage": 30.0,
+      "feature": 26.816730529891135
+    },
+    {
+      "image": "35percent.jpg",
+      "brown_percentage": 35.0,
+      "feature": 36.402172996928265
+    },
+    {
+      "image": "40percent.jpg",
+      "brown_percentage": 40.0,
+      "feature": 43.80472285740771
+    },
+    {
+      "image": "45percent.jpg",
+      "brown_percentage": 45.0,
+      "feature": 52.47232781549691
+    },
+    {
+      "image": "50percent.jpg",
+      "brown_percentage": 50.0,
+      "feature": 61.30473842844959
+    },
+    {
+      "image": "55percent.jpg",
+      "brown_percentage": 55.0,
+      "feature": 66.49540566262176
+    },
+    {
+      "image": "5percent.jpg",
+      "brown_percentage": 5.0,
+      "feature": 5.838232530007631
+    },
+    {
+      "image": "60percent.jpg",
+      "brown_percentage": 60.0,
+      "feature": 59.445997083712165
+    },
+    {
+      "image": "65percent.jpg",
+      "brown_percentage": 65.0,
+      "feature": 65.84436973068534
+    },
+    {
+      "image": "70percent.jpg",
+      "brown_percentage": 70.0,
+      "feature": 72.39753769572198
+    },
+    {
+      "image": "75percent.jpg",
+      "brown_percentage": 75.0,
+      "feature": 77.56220789035291
+    },
+    {
+      "image": "80percent.jpg",
+      "brown_percentage": 80.0,
+      "feature": 83.0095679568053
+    },
+    {
+      "image": "85percent.jpg",
+      "brown_percentage": 85.0,
+      "feature": 87.54216082994259
+    },
+    {
+      "image": "90percent.jpg",
+      "brown_percentage": 90.0,
+      "feature": 85.75779483705489
+    },
+    {
+      "image": "95percent.jpg",
+      "brown_percentage": 95.0,
+      "feature": 92.83810989940987
+    }
+  ],
+  "model": {
+    "type": "piecewise_linear",
+    "points": [
+      {
+        "feature": 0.0,
+        "brown_percentage": 0.0
+      },
+      {
+        "feature": 5.838232530007631,
+        "brown_percentage": 5.0
+      },
+      {
+        "feature": 15.516403384113325,
+        "brown_percentage": 10.0
+      },
+      {
+        "feature": 25.499920674286138,
+        "brown_percentage": 15.0
+      },
+      {
+        "feature": 26.816730529891135,
+        "brown_percentage": 30.0
+      },
+      {
+        "feature": 35.106847046613666,
+        "brown_percentage": 20.0
+      },
+      {
+        "feature": 36.402172996928265,
+        "brown_percentage": 35.0
+      },
+      {
+        "feature": 43.76279533474736,
+        "brown_percentage": 25.0
+      },
+      {
+        "feature": 43.80472285740771,
+        "brown_percentage": 40.0
+      },
+      {
+        "feature": 52.47232781549691,
+        "brown_percentage": 45.0
+      },
+      {
+        "feature": 59.445997083712165,
+        "brown_percentage": 60.0
+      },
+      {
+        "feature": 61.30473842844959,
+        "brown_percentage": 50.0
+      },
+      {
+        "feature": 65.84436973068534,
+        "brown_percentage": 65.0
+      },
+      {
+        "feature": 66.49540566262176,
+        "brown_percentage": 55.0
+      },
+      {
+        "feature": 72.39753769572198,
+        "brown_percentage": 70.0
+      },
+      {
+        "feature": 77.56220789035291,
+        "brown_percentage": 75.0
+      },
+      {
+        "feature": 83.0095679568053,
+        "brown_percentage": 80.0
+      },
+      {
+        "feature": 85.75779483705489,
+        "brown_percentage": 90.0
+      },
+      {
+        "feature": 87.54216082994259,
+        "brown_percentage": 85.0
+      },
+      {
+        "feature": 92.83810989940987,
+        "brown_percentage": 95.0
+      },
+      {
+        "feature": 99.9994105102898,
+        "brown_percentage": 100.0
+      }
+    ],
+    "feature_range": [
+      0.0,
+      99.9994105102898
+    ],
+    "mae": 0.0,
+    "max_error": 0.0
+  }
+}

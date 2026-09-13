@@ -145,6 +145,7 @@ class FrameProcessor:
         samples = self.brown_average.sample_count
         window = self.brown_average.window_size
         is_stable = samples >= window
+        stability_confidence = min(100.0, (samples / window) * 100.0)
         average_rgb = self.rgb_analyzer.process(white_balance, roi_mask)
         average_lab = self.lab_analyzer.process(white_balance, roi_mask)
         brightness = self.brightness_analyzer.process(
@@ -184,6 +185,6 @@ class FrameProcessor:
                 else "Stabilizing"
             ),
             tea_quality="",
-            confidence=min(100.0, (samples / window) * 100.0),
+            confidence=min(stability_confidence, brown.confidence),
             processing_ms=processing_ms,
         )
